@@ -11,6 +11,22 @@ Use `npm run version:bump -- <patch|minor|major|x.y.z>` after implementing and v
 
 ---
 
+## [0.3.1] - 2026-11-15 — Laptop-Friendly Ergonomic Button & Hit-Target Upgrade
+
+### Changed
+- **Floating Player Bar & Quick Action Pills (`FloatingPlayerBar.tsx`, `FloatingQuickActions.tsx`)**:
+  - Enlarged all transport controls (`Play/Pause` to `w-11 h-11` w/ `w-6 h-6` icon, `Previous`/`Next` to `w-10 h-10` w/ `w-[22px] h-[22px]` icons, `Shuffle`/`Repeat` to `w-9 h-9` w/ `w-[18px] h-[18px]` icons) and utility actions (`Like`, `Sidebar`, `Lyrics`, `Studio Controls`, `Theme`, `Volume` to `w-10 h-10` rounded hover pills w/ `w-5 h-5` icons).
+  - Enlarged `FloatingQuickActions` buttons (`Eye`, `Search`, `Disc`, `Fullscreen`) from `w-9 h-9` to `w-11 h-11` with `w-5 h-5` icons.
+  - Expanded player dock dimensions proportionally (`bottom-center` to `max-w-[880px] h-[76px]`, `bottom-wide` to `max-w-[1040px] h-[76px]`, `compact-dock` to `max-w-[680px] h-[68px]`) with matching quick-action container alignment and expanded vertical pointer hit padding on the seek bar (`py-1.5 -my-1.5`).
+- **Sidebar, Carousel & Search Controls (`ContinuePlayingSidebar.tsx`, `AlbumCarousel3D.tsx`, `SearchBarOverlay.tsx`, `BrowseDetailsModal.tsx`)**:
+  - Enlarged queue row action buttons (`Play Next`, `Remove`) from `w-7 h-7` to `w-9 h-9`, queue `Refresh` from `w-8 h-8` to `w-10 h-10`, and padded the `Played earlier` accordion row.
+  - Enlarged the Lyrics-mode `"Other lyrics"` switcher pill (`px-5 py-2.5 text-[14px]`) and wrapped carousel pagination dots in `p-2` rounded hover targets with `h-2` indicators so small trackpads click cleanly.
+  - Enlarged `SearchBarOverlay` (`h-[52px]` input pill, `w-9 h-9` search/clear icon pills, `w-10 h-10` close button, larger filter tabs and `Queue`/`Play Next` buttons) and `BrowseDetailsModal` (`Play`, `Shuffle`, `Retry`, `×` close button, and row queue buttons).
+- **Lyrics Mode, Studio Controls, Popup & Options (`LyricsStage.tsx`, `InAppSettingsPopover.tsx`, `PopupApp.tsx`, `OptionsApp.tsx`)**:
+  - Enlarged `Focus` / `Compact` / `Full` mode pills, `Follow Sync` buttons, `Retry`, and static lyric up/down chevron pills (`w-9 h-9`).
+  - Widened `InAppSettingsPopover` (`400px`) and enlarged its tabs, close button, toggle chips, theme preset tiles, swatches (`w-8 h-8`), wallpaper controls, and footer buttons (`Reset`, `Full Settings`, `Exit`).
+  - Enlarged interactive buttons and toggles across the toolbar `PopupApp` and full `OptionsApp` settings pages.
+
 ## [0.3.0] - 2026-11-15 — Reference Experience Completion: Rich Search, Artist/Album/Playlist Details & Lyrics-Only Mode
 
 ### Added

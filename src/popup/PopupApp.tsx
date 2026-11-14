@@ -145,13 +145,13 @@ export const PopupApp: React.FC = () => {
 
         <button
           onClick={handleToggleEnabled}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 border ${
+          className={`flex items-center gap-2 px-4 py-2 rounded-full text-[13px] font-semibold transition-all duration-200 border ${
             settings.enabled
               ? 'bg-[#C28356] text-black border-[#d89b6e] shadow-[0_0_16px_rgba(194,131,86,0.35)]'
               : 'bg-zinc-900 text-zinc-400 border-white/10 hover:text-zinc-200'
           }`}
         >
-          <Power className="w-3.5 h-3.5" />
+          <Power className="w-4 h-4" />
           <span>{settings.enabled ? 'ON' : 'OFF'}</span>
         </button>
       </div>
@@ -191,10 +191,10 @@ export const PopupApp: React.FC = () => {
             </div>
             <button
               onClick={openYouTubeMusic}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#C28356]/20 hover:bg-[#C28356]/30 text-[#e4a678] border border-[#C28356]/30 text-[11px] font-medium transition"
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#C28356]/20 hover:bg-[#C28356]/30 text-[#e4a678] border border-[#C28356]/30 text-xs font-medium transition"
             >
               <span>Open</span>
-              <ExternalLink className="w-3 h-3" />
+              <ExternalLink className="w-3.5 h-3.5" />
             </button>
           </div>
         )}
@@ -205,14 +205,14 @@ export const PopupApp: React.FC = () => {
         <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-400">
           Background Engine
         </label>
-        <div className="grid grid-cols-2 gap-1.5">
+        <div className="grid grid-cols-2 gap-2">
           {bgModes.map((mode) => {
             const active = settings.backgroundMode === mode.id;
             return (
               <button
                 key={mode.id}
                 onClick={() => handleUpdateSetting({ backgroundMode: mode.id })}
-                className={`flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs font-medium border text-left transition ${
+                className={`flex items-center gap-2 px-3 py-2.5 rounded-xl text-[12.5px] font-medium border text-left transition ${
                   active
                     ? 'bg-[#C28356]/20 border-[#C28356]/60 text-white'
                     : 'bg-white/[0.03] border-white/5 text-zinc-400 hover:bg-white/[0.06] hover:text-zinc-200'
@@ -238,7 +238,7 @@ export const PopupApp: React.FC = () => {
             </span>
           )}
         </div>
-        <div className="grid grid-cols-2 gap-1.5">
+        <div className="grid grid-cols-2 gap-2">
           {themeOrder.map((id) => {
             const def = THEME_DEFINITIONS[id];
             const active = settings.theme === id;
@@ -246,7 +246,7 @@ export const PopupApp: React.FC = () => {
               <button
                 key={id}
                 onClick={() => handleThemeChange(id)}
-                className={`flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs font-medium border transition ${
+                className={`flex items-center gap-2 px-3 py-2.5 rounded-xl text-[12.5px] font-medium border transition ${
                   active
                     ? 'bg-white/[0.09] border-[#C28356]/60 text-white'
                     : 'bg-white/[0.03] border-white/5 text-zinc-400 hover:bg-white/[0.06] hover:text-zinc-200'
@@ -269,40 +269,40 @@ export const PopupApp: React.FC = () => {
           Quick Layout & Atmosphere
         </label>
 
-        <div className="grid grid-cols-3 gap-1.5">
+        <div className="grid grid-cols-3 gap-2">
           <button
             onClick={() => handleUpdateSetting({ showClock: !settings.showClock })}
-            className={`flex flex-col items-center gap-1 py-2 rounded-lg border text-[11px] transition ${
+            className={`flex flex-col items-center gap-1.5 py-2.5 rounded-xl border text-xs font-medium transition ${
               settings.showClock
                 ? 'bg-white/[0.08] border-white/20 text-white'
                 : 'bg-white/[0.02] border-white/5 text-zinc-500'
             }`}
           >
-            <Clock className="w-3.5 h-3.5" />
+            <Clock className="w-4 h-4" />
             <span>Clock</span>
           </button>
 
           <button
             onClick={() => handleUpdateSetting({ showCarousel: !settings.showCarousel })}
-            className={`flex flex-col items-center gap-1 py-2 rounded-lg border text-[11px] transition ${
+            className={`flex flex-col items-center gap-1.5 py-2.5 rounded-xl border text-xs font-medium transition ${
               settings.showCarousel
                 ? 'bg-white/[0.08] border-white/20 text-white'
                 : 'bg-white/[0.02] border-white/5 text-zinc-500'
             }`}
           >
-            <Layers className="w-3.5 h-3.5" />
+            <Layers className="w-4 h-4" />
             <span>Carousel</span>
           </button>
 
           <button
             onClick={() => handleUpdateSetting({ showSidebar: !settings.showSidebar })}
-            className={`flex flex-col items-center gap-1 py-2 rounded-lg border text-[11px] transition ${
+            className={`flex flex-col items-center gap-1.5 py-2.5 rounded-xl border text-xs font-medium transition ${
               settings.showSidebar
                 ? 'bg-white/[0.08] border-white/20 text-white'
                 : 'bg-white/[0.02] border-white/5 text-zinc-500'
             }`}
           >
-            <PanelLeft className="w-3.5 h-3.5" />
+            <PanelLeft className="w-4 h-4" />
             <span>Sidebar</span>
           </button>
         </div>
@@ -344,18 +344,18 @@ export const PopupApp: React.FC = () => {
       <div className="flex items-center justify-between pt-2 border-t border-white/10">
         <button
           onClick={handleReset}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-zinc-400 hover:text-zinc-200 hover:bg-white/5 transition"
+          className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[12.5px] font-medium text-zinc-400 hover:text-zinc-200 hover:bg-white/5 transition"
           title="Reset to default settings"
         >
-          <RotateCcw className="w-3.5 h-3.5" />
+          <RotateCcw className="w-4 h-4" />
           <span>Reset</span>
         </button>
 
         <button
           onClick={openOptionsPage}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.07] hover:bg-white/[0.12] border border-white/10 text-xs font-medium text-zinc-100 transition"
+          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/[0.07] hover:bg-white/[0.12] border border-white/10 text-[12.5px] font-medium text-zinc-100 transition"
         >
-          <Settings className="w-3.5 h-3.5 text-[#C28356]" />
+          <Settings className="w-4 h-4 text-[#C28356]" />
           <span>Full Settings</span>
         </button>
       </div>

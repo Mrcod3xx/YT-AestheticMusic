@@ -80,7 +80,7 @@ export const ContinuePlayingSidebar: React.FC<ContinuePlayingSidebarProps> = ({
         </div>
       </div>
       {(onPlayNextTrack || onRemoveTrack) && (
-        <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+        <div className="flex items-center gap-1.5 shrink-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
           {onPlayNextTrack && canPlayNext && (
             <button
               type="button"
@@ -90,10 +90,10 @@ export const ContinuePlayingSidebar: React.FC<ContinuePlayingSidebarProps> = ({
               }}
               title="Play Next"
               aria-label={`Play ${item.title} next`}
-              className="w-7 h-7 rounded-lg flex items-center justify-center bg-white/[0.08] hover:bg-white/[0.18] border border-white/10 text-zinc-300 transition cursor-pointer"
+              className="w-9 h-9 rounded-xl flex items-center justify-center bg-white/[0.08] hover:bg-white/[0.18] border border-white/10 text-zinc-300 transition cursor-pointer"
               style={{ borderColor: 'rgba(var(--aesthetic-accent-hi-rgb, 232, 155, 99), 0.35)' }}
             >
-              <ListStart className="w-3.5 h-3.5 text-[var(--aesthetic-accent,#E89B63)]" />
+              <ListStart className="w-4 h-4 text-[var(--aesthetic-accent,#E89B63)]" />
             </button>
           )}
           {onRemoveTrack && (
@@ -105,9 +105,9 @@ export const ContinuePlayingSidebar: React.FC<ContinuePlayingSidebarProps> = ({
               }}
               title="Remove from queue"
               aria-label={`Remove ${item.title} from queue`}
-              className="w-7 h-7 rounded-lg flex items-center justify-center bg-white/[0.08] hover:bg-red-500/20 border border-white/10 hover:border-red-400/40 text-zinc-400 hover:text-red-300 transition cursor-pointer"
+              className="w-9 h-9 rounded-xl flex items-center justify-center bg-white/[0.08] hover:bg-red-500/20 border border-white/10 hover:border-red-400/40 text-zinc-400 hover:text-red-300 transition cursor-pointer"
             >
-              <X className="w-3.5 h-3.5" />
+              <X className="w-4 h-4" />
             </button>
           )}
         </div>
@@ -156,9 +156,9 @@ export const ContinuePlayingSidebar: React.FC<ContinuePlayingSidebarProps> = ({
             type="button"
             onClick={onRefreshQueue}
             title="Synchronize queue with YouTube Music"
-            className="w-8 h-8 rounded-full flex items-center justify-center bg-white/[0.08] hover:bg-white/[0.16] border border-white/15 text-zinc-300 hover:text-white transition cursor-pointer"
+            className="w-10 h-10 rounded-full flex items-center justify-center bg-white/[0.08] hover:bg-white/[0.16] border border-white/15 text-zinc-300 hover:text-white transition cursor-pointer shrink-0"
           >
-            <RefreshCw className="w-3.5 h-3.5" />
+            <RefreshCw className="w-4 h-4" />
           </button>
         </div>
 
@@ -242,13 +242,13 @@ export const ContinuePlayingSidebar: React.FC<ContinuePlayingSidebarProps> = ({
               <button
                 type="button"
                 onClick={() => setShowEarlier((prev) => !prev)}
-                className="w-full flex items-center justify-between px-2.5 py-1.5 text-[11.5px] font-medium text-zinc-400 hover:text-zinc-200 transition cursor-pointer"
+                className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-[12.5px] font-medium text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.06] transition cursor-pointer"
               >
-                <span className="flex items-center gap-1.5">
+                <span className="flex items-center gap-2">
                   {showEarlier ? (
-                    <ChevronDown className="w-3.5 h-3.5" />
+                    <ChevronDown className="w-4 h-4" />
                   ) : (
-                    <ChevronRight className="w-3.5 h-3.5" />
+                    <ChevronRight className="w-4 h-4" />
                   )}
                   Played earlier ({earlierItems.length})
                 </span>

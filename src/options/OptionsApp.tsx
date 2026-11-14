@@ -193,21 +193,21 @@ export const OptionsApp: React.FC = () => {
           <div className="flex items-center gap-3">
             <button
               onClick={handleReset}
-              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 text-xs font-medium text-zinc-300 transition cursor-pointer"
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 text-[13px] font-medium text-zinc-300 transition cursor-pointer"
             >
-              <RotateCcw className="w-3.5 h-3.5" />
+              <RotateCcw className="w-4 h-4" />
               <span>Reset Defaults</span>
             </button>
 
             <button
               onClick={() => update({ enabled: !settings.enabled })}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold border transition cursor-pointer ${
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-[13px] font-semibold border transition cursor-pointer ${
                 settings.enabled
                   ? 'bg-[#C28356] text-black border-[#d89b6e]'
                   : 'bg-zinc-900 text-zinc-400 border-white/10'
               }`}
             >
-              <Power className="w-3.5 h-3.5" />
+              <Power className="w-4 h-4" />
               <span>Aesthetic Mode: {settings.enabled ? 'ON' : 'OFF'}</span>
             </button>
           </div>
@@ -300,7 +300,7 @@ export const OptionsApp: React.FC = () => {
                     key={item.id}
                     type="button"
                     onClick={() => update({ fontFamily: item.id })}
-                    className={`px-3 py-2 rounded-xl text-xs font-medium border transition cursor-pointer ${
+                    className={`px-3.5 py-2.5 rounded-xl text-[13px] font-medium border transition cursor-pointer ${
                       settings.fontFamily === item.id
                         ? 'bg-[#C28356]/20 border-[#C28356] text-white'
                         : 'bg-white/[0.02] border-white/10 text-zinc-400 hover:text-zinc-200'
@@ -325,7 +325,7 @@ export const OptionsApp: React.FC = () => {
                     onChange={(e) =>
                       update({ accentColor: e.target.value, clockColor: e.target.value })
                     }
-                    className="w-7 h-6 rounded bg-transparent border border-white/15 cursor-pointer"
+                    className="w-8 h-7 rounded bg-transparent border border-white/15 cursor-pointer"
                   />
                 </div>
               </div>
@@ -342,7 +342,7 @@ export const OptionsApp: React.FC = () => {
                       onClick={() =>
                         update({ accentColor: sw.color, clockColor: sw.color })
                       }
-                      className={`w-7 h-7 rounded-full border-2 transition cursor-pointer ${
+                      className={`w-8 h-8 rounded-full border-2 transition cursor-pointer ${
                         selected ? 'border-white scale-110' : 'border-white/20 opacity-80 hover:opacity-100'
                       }`}
                       style={{ backgroundColor: sw.color }}
@@ -462,7 +462,7 @@ export const OptionsApp: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => update({ backgroundMode: 'custom' })}
-                        className="px-2.5 py-1 rounded-lg bg-[#C28356]/25 text-[#E89B63] text-[11px] font-medium cursor-pointer"
+                        className="px-3.5 py-2 rounded-xl bg-[#C28356]/25 hover:bg-[#C28356]/35 text-[#E89B63] text-xs font-medium cursor-pointer transition"
                       >
                         Activate
                       </button>
@@ -471,9 +471,9 @@ export const OptionsApp: React.FC = () => {
                       type="button"
                       onClick={handleClearWallpaper}
                       title="Remove custom wallpaper"
-                      className="p-1.5 rounded-lg bg-red-500/15 hover:bg-red-500/25 text-red-300 cursor-pointer"
+                      className="w-9 h-9 rounded-xl flex items-center justify-center bg-red-500/15 hover:bg-red-500/25 text-red-300 cursor-pointer transition"
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
+                      <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
                 </div>

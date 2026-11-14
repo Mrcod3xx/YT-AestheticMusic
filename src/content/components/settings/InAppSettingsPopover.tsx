@@ -174,24 +174,24 @@ export const InAppSettingsPopover: React.FC<InAppSettingsPopoverProps> = ({
   };
 
   const bgModes: { id: BackgroundMode; label: string; icon: React.ReactNode }[] = [
-    { id: 'auto', label: 'Auto (Video + Art)', icon: <Sparkles className="w-3.5 h-3.5" /> },
-    { id: 'video', label: 'Video Only', icon: <Film className="w-3.5 h-3.5" /> },
-    { id: 'ambient', label: 'Album Ambient', icon: <Disc className="w-3.5 h-3.5" /> },
-    { id: 'custom', label: 'Custom BG', icon: <ImageIcon className="w-3.5 h-3.5" /> },
-    { id: 'off', label: 'Minimal Off', icon: <EyeOff className="w-3.5 h-3.5" /> },
+    { id: 'auto', label: 'Auto (Video + Art)', icon: <Sparkles className="w-4 h-4" /> },
+    { id: 'video', label: 'Video Only', icon: <Film className="w-4 h-4" /> },
+    { id: 'ambient', label: 'Album Ambient', icon: <Disc className="w-4 h-4" /> },
+    { id: 'custom', label: 'Custom BG', icon: <ImageIcon className="w-4 h-4" /> },
+    { id: 'off', label: 'Minimal Off', icon: <EyeOff className="w-4 h-4" /> },
   ];
 
   const themeOrder: ThemePreset[] = ['night-city', 'minimal-dark', 'cozy-room', 'custom'];
 
   const tabs: { id: PopoverTab; label: string; icon: React.ReactNode }[] = [
-    { id: 'presets', label: 'Presets', icon: <Sparkles className="w-3 h-3" /> },
-    { id: 'appearance', label: 'Clock & UI', icon: <Type className="w-3 h-3" /> },
-    { id: 'wallpaper', label: 'Wallpaper', icon: <ImageIcon className="w-3 h-3" /> },
+    { id: 'presets', label: 'Presets', icon: <Sparkles className="w-3.5 h-3.5" /> },
+    { id: 'appearance', label: 'Clock & UI', icon: <Type className="w-3.5 h-3.5" /> },
+    { id: 'wallpaper', label: 'Wallpaper', icon: <ImageIcon className="w-3.5 h-3.5" /> },
   ];
 
   return (
     <div
-      className="fixed bottom-28 right-8 xl:right-[14vw] w-[372px] max-h-[72vh] flex flex-col rounded-3xl p-5 z-50 text-zinc-100 pointer-events-auto"
+      className="fixed bottom-28 right-8 xl:right-[14vw] w-[400px] max-h-[72vh] flex flex-col rounded-3xl p-5 z-50 text-zinc-100 pointer-events-auto"
       style={{
         background: 'rgba(16, 17, 23, 0.92)',
         backdropFilter: 'blur(32px) saturate(165%)',
@@ -213,9 +213,10 @@ export const InAppSettingsPopover: React.FC<InAppSettingsPopoverProps> = ({
         </div>
         <button
           onClick={onClose}
-          className="p-1 rounded-full hover:bg-white/10 text-zinc-400 hover:text-white transition cursor-pointer"
+          title="Close Studio Controls"
+          className="w-9 h-9 rounded-full flex items-center justify-center hover:bg-white/10 text-zinc-400 hover:text-white transition cursor-pointer shrink-0"
         >
-          <X className="w-4 h-4" />
+          <X className="w-5 h-5" />
         </button>
       </div>
 
@@ -245,7 +246,7 @@ export const InAppSettingsPopover: React.FC<InAppSettingsPopoverProps> = ({
               key={tab.id}
               type="button"
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[11.5px] font-medium transition cursor-pointer ${
+              className={`flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-[12.5px] font-medium transition cursor-pointer ${
                 active
                   ? 'bg-white/15 text-white shadow-sm'
                   : 'text-zinc-400 hover:text-zinc-200'
@@ -276,7 +277,7 @@ export const InAppSettingsPopover: React.FC<InAppSettingsPopoverProps> = ({
                       key={id}
                       type="button"
                       onClick={() => onSelectTheme(id)}
-                      className={`p-2.5 rounded-2xl border text-left transition cursor-pointer ${
+                      className={`p-3 rounded-2xl border text-left transition cursor-pointer ${
                         active
                           ? 'border-[var(--aesthetic-accent-strong,#C28356)] bg-white/[0.09]'
                           : 'border-white/10 bg-white/[0.03] hover:bg-white/[0.06]'
@@ -287,11 +288,11 @@ export const InAppSettingsPopover: React.FC<InAppSettingsPopoverProps> = ({
                           className="w-5 h-5 rounded-full border border-white/25 shrink-0"
                           style={{ background: def.previewGradient }}
                         />
-                        <span className="text-[12px] font-semibold text-white truncate">
+                        <span className="text-[13px] font-semibold text-white truncate">
                           {def.label}
                         </span>
                       </div>
-                      <p className="text-[10px] text-zinc-400 line-clamp-1">{def.tagline}</p>
+                      <p className="text-[10.5px] text-zinc-400 line-clamp-1">{def.tagline}</p>
                     </button>
                   );
                 })}
@@ -339,7 +340,7 @@ export const InAppSettingsPopover: React.FC<InAppSettingsPopoverProps> = ({
               <button
                 type="button"
                 onClick={() => onUpdateSettings({ vignette: !settings.vignette })}
-                className={`py-1.5 px-3 rounded-xl text-[11.5px] font-medium border transition cursor-pointer ${
+                className={`py-2.5 px-3.5 rounded-xl text-[12.5px] font-medium border transition cursor-pointer ${
                   settings.vignette
                     ? 'bg-white/15 border-white/30 text-white'
                     : 'bg-white/[0.03] border-white/10 text-zinc-400'
@@ -350,7 +351,7 @@ export const InAppSettingsPopover: React.FC<InAppSettingsPopoverProps> = ({
               <button
                 type="button"
                 onClick={() => onUpdateSettings({ filmGrain: !settings.filmGrain })}
-                className={`py-1.5 px-3 rounded-xl text-[11.5px] font-medium border transition cursor-pointer ${
+                className={`py-2.5 px-3.5 rounded-xl text-[12.5px] font-medium border transition cursor-pointer ${
                   settings.filmGrain
                     ? 'bg-white/15 border-white/30 text-white'
                     : 'bg-white/[0.03] border-white/10 text-zinc-400'
@@ -369,7 +370,7 @@ export const InAppSettingsPopover: React.FC<InAppSettingsPopoverProps> = ({
               <label className="text-[10.5px] font-semibold uppercase tracking-wider text-zinc-400">
                 Interface Panels
               </label>
-              <div className="grid grid-cols-3 gap-1.5">
+              <div className="grid grid-cols-3 gap-2">
                 {[
                   { key: 'showClock' as const, label: 'Clock', val: settings.showClock },
                   { key: 'clock24Hour' as const, label: '24-Hour', val: settings.clock24Hour },
@@ -382,7 +383,7 @@ export const InAppSettingsPopover: React.FC<InAppSettingsPopoverProps> = ({
                     key={item.key}
                     type="button"
                     onClick={() => onUpdateSettings({ [item.key]: !item.val })}
-                    className={`py-1.5 px-2 rounded-xl text-[11px] font-medium border transition cursor-pointer ${
+                    className={`py-2.5 px-2.5 rounded-xl text-[12px] font-medium border transition cursor-pointer ${
                       item.val
                         ? 'bg-white/15 border-white/25 text-white'
                         : 'bg-white/[0.03] border-white/10 text-zinc-500'
@@ -410,10 +411,10 @@ export const InAppSettingsPopover: React.FC<InAppSettingsPopoverProps> = ({
                     })
                   }
                   title="Pick custom accent & clock color"
-                  className="w-6 h-5 rounded cursor-pointer bg-transparent border border-white/20"
+                  className="w-8 h-7 rounded cursor-pointer bg-transparent border border-white/20"
                 />
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2.5">
                 {ACCENT_SWATCHES.map((sw) => {
                   const selected =
                     (settings.accentColor || settings.clockColor).toLowerCase() ===
@@ -429,7 +430,7 @@ export const InAppSettingsPopover: React.FC<InAppSettingsPopoverProps> = ({
                           clockColor: sw.color,
                         })
                       }
-                      className={`w-7 h-7 rounded-full border-2 transition cursor-pointer ${
+                      className={`w-8 h-8 rounded-full border-2 transition cursor-pointer ${
                         selected ? 'border-white scale-110' : 'border-white/20 opacity-80 hover:opacity-100'
                       }`}
                       style={{ backgroundColor: sw.color }}
@@ -444,7 +445,7 @@ export const InAppSettingsPopover: React.FC<InAppSettingsPopoverProps> = ({
               <label className="text-[10.5px] font-semibold uppercase tracking-wider text-zinc-400">
                 Typography Style
               </label>
-              <div className="grid grid-cols-3 gap-1.5">
+              <div className="grid grid-cols-3 gap-2">
                 {(
                   [
                     { id: 'modern', label: 'Modern' },
@@ -456,7 +457,7 @@ export const InAppSettingsPopover: React.FC<InAppSettingsPopoverProps> = ({
                     key={f.id}
                     type="button"
                     onClick={() => onUpdateSettings({ fontFamily: f.id })}
-                    className={`py-1.5 rounded-xl text-[11.5px] font-medium border transition cursor-pointer ${
+                    className={`py-2.5 rounded-xl text-[12.5px] font-medium border transition cursor-pointer ${
                       settings.fontFamily === f.id
                         ? 'bg-white/15 border-white/30 text-white'
                         : 'bg-white/[0.03] border-white/10 text-zinc-400 hover:text-zinc-200'
@@ -473,7 +474,7 @@ export const InAppSettingsPopover: React.FC<InAppSettingsPopoverProps> = ({
               <label className="text-[10.5px] font-semibold uppercase tracking-wider text-zinc-400">
                 Player Dock Width
               </label>
-              <div className="grid grid-cols-3 gap-1.5">
+              <div className="grid grid-cols-3 gap-2">
                 {(
                   [
                     { id: 'bottom-center', label: 'Standard' },
@@ -485,7 +486,7 @@ export const InAppSettingsPopover: React.FC<InAppSettingsPopoverProps> = ({
                     key={p.id}
                     type="button"
                     onClick={() => onUpdateSettings({ playerPosition: p.id })}
-                    className={`py-1.5 rounded-xl text-[11.5px] font-medium border transition cursor-pointer ${
+                    className={`py-2.5 rounded-xl text-[12.5px] font-medium border transition cursor-pointer ${
                       settings.playerPosition === p.id
                         ? 'bg-white/15 border-white/30 text-white'
                         : 'bg-white/[0.03] border-white/10 text-zinc-400 hover:text-zinc-200'
@@ -550,7 +551,7 @@ export const InAppSettingsPopover: React.FC<InAppSettingsPopoverProps> = ({
                       key={m.id}
                       type="button"
                       onClick={() => onUpdateSettings({ backgroundMode: m.id })}
-                      className={`flex items-center gap-2 px-2.5 py-1.5 rounded-xl text-[12px] font-medium border transition cursor-pointer ${
+                      className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-[12.5px] font-medium border transition cursor-pointer ${
                         active
                           ? 'bg-white/15 border-white/30 text-white'
                           : 'bg-white/[0.03] border-white/10 text-zinc-400 hover:text-zinc-200'
@@ -623,12 +624,12 @@ export const InAppSettingsPopover: React.FC<InAppSettingsPopoverProps> = ({
                       {settings.backgroundMode === 'custom' ? 'Active' : 'Saved (Switch to Custom BG)'}
                     </div>
                   </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
+                  <div className="flex items-center gap-2 shrink-0">
                     {settings.backgroundMode !== 'custom' && (
                       <button
                         type="button"
                         onClick={() => onUpdateSettings({ backgroundMode: 'custom' })}
-                        className="px-2 py-1 rounded-lg bg-white/15 hover:bg-white/25 text-[10.5px] text-white cursor-pointer"
+                        className="px-3.5 py-1.5 rounded-xl bg-white/15 hover:bg-white/25 text-xs font-medium text-white cursor-pointer"
                       >
                         Use
                       </button>
@@ -637,9 +638,9 @@ export const InAppSettingsPopover: React.FC<InAppSettingsPopoverProps> = ({
                       type="button"
                       onClick={handleClearWallpaper}
                       title="Remove custom wallpaper"
-                      className="p-1.5 rounded-lg bg-red-500/15 hover:bg-red-500/25 text-red-300 cursor-pointer"
+                      className="w-9 h-9 rounded-xl flex items-center justify-center bg-red-500/15 hover:bg-red-500/25 text-red-300 cursor-pointer"
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
+                      <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
                 </div>
@@ -657,22 +658,22 @@ export const InAppSettingsPopover: React.FC<InAppSettingsPopoverProps> = ({
 
       {/* Bottom Actions */}
       <div className="flex items-center justify-between pt-3 mt-3 border-t border-white/10 shrink-0">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-1.5">
           <button
             type="button"
             onClick={onReset}
-            className="flex items-center gap-1 text-[11.5px] text-zinc-400 hover:text-white transition cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[12.5px] font-medium text-zinc-300 hover:text-white hover:bg-white/[0.07] transition cursor-pointer"
           >
-            <RotateCcw className="w-3.5 h-3.5" />
+            <RotateCcw className="w-4 h-4" />
             <span>Reset</span>
           </button>
 
           <button
             type="button"
             onClick={openFullOptions}
-            className="flex items-center gap-1 text-[11.5px] text-zinc-400 hover:text-white transition cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[12.5px] font-medium text-zinc-300 hover:text-white hover:bg-white/[0.07] transition cursor-pointer"
           >
-            <ExternalLink className="w-3.5 h-3.5" />
+            <ExternalLink className="w-4 h-4" />
             <span>Full Settings</span>
           </button>
         </div>
@@ -680,9 +681,9 @@ export const InAppSettingsPopover: React.FC<InAppSettingsPopoverProps> = ({
         <button
           type="button"
           onClick={() => onUpdateSettings({ enabled: false })}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-200 text-[11.5px] font-medium transition cursor-pointer"
+          className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-200 text-[12.5px] font-medium transition cursor-pointer"
         >
-          <Power className="w-3.5 h-3.5" />
+          <Power className="w-4 h-4" />
           <span>Exit</span>
         </button>
       </div>

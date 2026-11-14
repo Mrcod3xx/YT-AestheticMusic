@@ -102,15 +102,15 @@ export const FloatingPlayerBar: React.FC<FloatingPlayerBarProps> = ({
   const glassAlpha = Math.min(0.92, Math.max(0.35, settings.playerGlassOpacity / 100));
   const barSizeClass =
     settings.playerPosition === 'bottom-wide'
-      ? 'max-w-[940px] h-[68px] px-7 gap-5'
+      ? 'max-w-[1040px] h-[76px] px-7 gap-5'
       : settings.playerPosition === 'compact-dock'
-      ? 'max-w-[600px] h-[60px] px-4 gap-3.5'
-      : 'max-w-[760px] h-[68px] px-6 gap-5';
+      ? 'max-w-[680px] h-[68px] px-5 gap-3.5'
+      : 'max-w-[880px] h-[76px] px-6 gap-4';
   const miniArtClass =
     settings.thumbnailSize === 'small'
-      ? 'w-8 h-8'
+      ? 'w-9 h-9'
       : settings.thumbnailSize === 'large'
-      ? 'w-11 h-11'
+      ? 'w-12 h-12'
       : 'w-10 h-10';
 
   return (
@@ -126,17 +126,17 @@ export const FloatingPlayerBar: React.FC<FloatingPlayerBarProps> = ({
       }}
     >
       {/* Left: YTM Badge + Transport Controls */}
-      <div className="flex items-center gap-3.5 shrink-0">
+      <div className="flex items-center gap-1 shrink-0">
         {/* Red YouTube Music Circular Emblem */}
         <div
-          className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 shadow-md"
+          className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 shadow-md mr-1"
           style={{
             background: 'linear-gradient(135deg, #FF2A54 0%, #D9143A 100%)',
           }}
           title="Connected to YouTube Music"
         >
-          <div className="w-4 h-4 rounded-full border border-white/90 flex items-center justify-center">
-            <Play className="w-2 h-2 text-white fill-white ml-[0.5px]" />
+          <div className="w-[18px] h-[18px] rounded-full border border-white/90 flex items-center justify-center">
+            <Play className="w-2.5 h-2.5 text-white fill-white ml-[0.5px]" />
           </div>
         </div>
 
@@ -144,16 +144,16 @@ export const FloatingPlayerBar: React.FC<FloatingPlayerBarProps> = ({
         <button
           onClick={onPrevious}
           title="Previous Track"
-          className="text-zinc-200 hover:text-white transition transform active:scale-90 cursor-pointer"
+          className="w-10 h-10 rounded-full flex items-center justify-center text-zinc-200 hover:text-white hover:bg-white/10 transition transform active:scale-90 cursor-pointer"
         >
-          <Rewind className="w-5 h-5 fill-current" />
+          <Rewind className="w-[22px] h-[22px] fill-current" />
         </button>
 
         {/* Play / Pause */}
         <button
           onClick={onTogglePlay}
           title={track.isPlaying ? 'Pause' : 'Play'}
-          className="text-white hover:scale-105 transition transform active:scale-95 cursor-pointer mx-0.5"
+          className="w-11 h-11 rounded-full flex items-center justify-center bg-white/[0.12] hover:bg-white/[0.22] text-white hover:scale-105 transition transform active:scale-95 cursor-pointer"
         >
           {track.isPlaying ? (
             <Pause className="w-6 h-6 fill-current" />
@@ -166,9 +166,9 @@ export const FloatingPlayerBar: React.FC<FloatingPlayerBarProps> = ({
         <button
           onClick={onNext}
           title="Next Track"
-          className="text-zinc-200 hover:text-white transition transform active:scale-90 cursor-pointer"
+          className="w-10 h-10 rounded-full flex items-center justify-center text-zinc-200 hover:text-white hover:bg-white/10 transition transform active:scale-90 cursor-pointer"
         >
-          <FastForward className="w-5 h-5 fill-current" />
+          <FastForward className="w-[22px] h-[22px] fill-current" />
         </button>
 
         {/* Shuffle & Repeat */}
@@ -177,28 +177,28 @@ export const FloatingPlayerBar: React.FC<FloatingPlayerBarProps> = ({
             <button
               onClick={onToggleShuffle}
               title={`Shuffle: ${track.shuffleOn ? 'ON' : 'OFF'}`}
-              className={`transition cursor-pointer ${
+              className={`w-9 h-9 rounded-full flex items-center justify-center hover:bg-white/10 transition cursor-pointer ${
                 track.shuffleOn
                   ? 'text-[var(--aesthetic-accent,#E89B63)]'
                   : 'text-zinc-400 hover:text-zinc-200'
               }`}
             >
-              <Shuffle className="w-4 h-4" />
+              <Shuffle className="w-[18px] h-[18px]" />
             </button>
 
             <button
               onClick={onToggleRepeat}
               title={`Repeat: ${track.repeatMode}`}
-              className={`transition cursor-pointer ${
+              className={`w-9 h-9 rounded-full flex items-center justify-center hover:bg-white/10 transition cursor-pointer ${
                 track.repeatMode !== 'NONE'
                   ? 'text-[var(--aesthetic-accent,#E89B63)]'
                   : 'text-zinc-400 hover:text-zinc-200'
               }`}
             >
               {track.repeatMode === 'ONE' ? (
-                <Repeat1 className="w-4 h-4" />
+                <Repeat1 className="w-[18px] h-[18px]" />
               ) : (
-                <Repeat className="w-4 h-4" />
+                <Repeat className="w-[18px] h-[18px]" />
               )}
             </button>
           </>
@@ -206,7 +206,7 @@ export const FloatingPlayerBar: React.FC<FloatingPlayerBarProps> = ({
       </div>
 
       {/* Center: Mini Artwork + Track Title/Artist + Integrated Draggable Progress Bar */}
-      <div className="flex-1 min-w-0 flex flex-col justify-center gap-2 px-1">
+      <div className="flex-1 min-w-0 flex flex-col justify-center gap-1.5 px-1">
         <div className="flex items-center gap-3 min-w-0">
           <img
             src={track.artworkUrl}
@@ -229,36 +229,38 @@ export const FloatingPlayerBar: React.FC<FloatingPlayerBarProps> = ({
           </div>
         </div>
 
-        {/* Draggable & Clickable Seek Bar */}
+        {/* Draggable & Clickable Seek Bar with Expanded Pointer Hit Area */}
         <div
           ref={seekBarRef}
           onPointerDown={handleSeekPointerDown}
           onPointerMove={handleSeekPointerMove}
           onPointerUp={handleSeekPointerUp}
-          className="w-full h-[4px] hover:h-[7px] bg-white/20 rounded-full overflow-hidden cursor-pointer transition-all relative"
+          className="w-full py-1.5 -my-1.5 cursor-pointer group/seek relative"
           title="Click or drag to seek"
         >
-          <div
-            className="h-full bg-white rounded-full transition-[width] duration-75"
-            style={{ width: `${progressPercent}%` }}
-          />
+          <div className="w-full h-[5px] group-hover/seek:h-[8px] bg-white/20 rounded-full overflow-hidden transition-all relative">
+            <div
+              className="h-full bg-white rounded-full transition-[width] duration-75"
+              style={{ width: `${progressPercent}%` }}
+            />
+          </div>
         </div>
       </div>
 
       {/* Right: Utility Action Icons (Like, Queue, Lyrics, Settings, Theme, Volume) */}
-      <div className="flex items-center gap-3 shrink-0">
+      <div className="flex items-center gap-1 shrink-0">
         {settings.showLikeButton && (
           <button
             onClick={onToggleLike}
             title={track.isLiked ? 'Unlike' : 'Like song'}
-            className={`transition cursor-pointer ${
+            className={`w-10 h-10 rounded-full flex items-center justify-center hover:bg-white/10 transition cursor-pointer ${
               track.isLiked
                 ? 'text-[#FF2A54]'
                 : 'text-zinc-300 hover:text-white'
             }`}
           >
             <Heart
-              className={`w-[18px] h-[18px] ${track.isLiked ? 'fill-current' : ''}`}
+              className={`w-5 h-5 ${track.isLiked ? 'fill-current' : ''}`}
             />
           </button>
         )}
@@ -267,9 +269,9 @@ export const FloatingPlayerBar: React.FC<FloatingPlayerBarProps> = ({
         <button
           onClick={onToggleSidebar}
           title="Toggle Continue Playing Sidebar"
-          className="text-zinc-300 hover:text-white transition cursor-pointer"
+          className="w-10 h-10 rounded-full flex items-center justify-center text-zinc-300 hover:text-white hover:bg-white/10 transition cursor-pointer"
         >
-          <MoreHorizontal className="w-[18px] h-[18px]" />
+          <MoreHorizontal className="w-5 h-5" />
         </button>
 
         {/* Lyrics Button */}
@@ -277,13 +279,13 @@ export const FloatingPlayerBar: React.FC<FloatingPlayerBarProps> = ({
           <button
             onClick={onToggleLyrics}
             title="Toggle Lyrics Mode"
-            className={`w-8 h-8 rounded-full flex items-center justify-center transition-all cursor-pointer ${
+            className={`w-10 h-10 rounded-full flex items-center justify-center transition-all cursor-pointer ${
               lyricsOpen
                 ? 'bg-white text-black shadow-[0_0_14px_rgba(255,255,255,0.6)]'
                 : 'text-zinc-300 hover:text-white hover:bg-white/10'
             }`}
           >
-            <MessageSquareQuote className="w-4 h-4" />
+            <MessageSquareQuote className="w-5 h-5" />
           </button>
         )}
 
@@ -291,22 +293,22 @@ export const FloatingPlayerBar: React.FC<FloatingPlayerBarProps> = ({
         <button
           onClick={onToggleSettingsPopover}
           title="Aesthetic Studio Controls"
-          className={`w-8 h-8 rounded-full flex items-center justify-center transition cursor-pointer ${
+          className={`w-10 h-10 rounded-full flex items-center justify-center transition cursor-pointer ${
             settingsOpen
               ? 'bg-[var(--aesthetic-accent-strong,#C28356)] text-black'
               : 'text-zinc-300 hover:text-white hover:bg-white/10'
           }`}
         >
-          <SlidersHorizontal className="w-4 h-4" />
+          <SlidersHorizontal className="w-5 h-5" />
         </button>
 
         {/* Theme Preset Cycle (🌙) */}
         <button
           onClick={onCycleTheme}
           title={`Theme: ${settings.theme} (Click to switch)`}
-          className="text-zinc-300 hover:text-[var(--aesthetic-accent,#E89B63)] transition cursor-pointer"
+          className="w-10 h-10 rounded-full flex items-center justify-center text-zinc-300 hover:text-[var(--aesthetic-accent,#E89B63)] hover:bg-white/10 transition cursor-pointer"
         >
-          <Moon className="w-4 h-4" />
+          <Moon className="w-5 h-5" />
         </button>
 
         {/* Volume Button + Popover Slider */}
@@ -319,18 +321,18 @@ export const FloatingPlayerBar: React.FC<FloatingPlayerBarProps> = ({
             <button
               onClick={onToggleMute}
               title={track.isMuted ? 'Unmute' : `Volume: ${Math.round(track.volume)}%`}
-              className="text-zinc-300 hover:text-white transition cursor-pointer"
+              className="w-10 h-10 rounded-full flex items-center justify-center text-zinc-300 hover:text-white hover:bg-white/10 transition cursor-pointer"
             >
               {track.isMuted || track.volume === 0 ? (
-                <VolumeX className="w-[18px] h-[18px] text-zinc-500" />
+                <VolumeX className="w-5 h-5 text-zinc-500" />
               ) : (
-                <Volume2 className="w-[18px] h-[18px]" />
+                <Volume2 className="w-5 h-5" />
               )}
             </button>
 
             {showVolumePopover && (
               <div
-                className="absolute bottom-9 right-0 px-3.5 py-2.5 rounded-xl flex items-center gap-2.5 z-50"
+                className="absolute bottom-12 right-0 px-4 py-3 rounded-xl flex items-center gap-3 z-50"
                 style={{
                   background: 'rgba(18, 19, 25, 0.94)',
                   backdropFilter: 'blur(20px)',
@@ -344,9 +346,9 @@ export const FloatingPlayerBar: React.FC<FloatingPlayerBarProps> = ({
                   max={100}
                   value={track.isMuted ? 0 : track.volume}
                   onChange={(e) => onVolumeChange(Number(e.target.value))}
-                  className="w-28 h-1.5 bg-zinc-700 rounded-lg cursor-pointer accent-white"
+                  className="w-32 h-2 bg-zinc-700 rounded-lg cursor-pointer accent-white"
                 />
-                <span className="text-[11px] font-mono text-zinc-300 w-8 text-right">
+                <span className="text-xs font-mono text-zinc-300 w-9 text-right">
                   {Math.round(track.isMuted ? 0 : track.volume)}%
                 </span>
               </div>

@@ -253,14 +253,14 @@ export const SearchBarOverlay: React.FC<SearchBarOverlayProps> = ({
     if (!item.canQueue || !item.onAddToQueue) return null;
     const feedback = queuedFeedback[item.id];
     return (
-      <div className="flex items-center gap-1 shrink-0">
+      <div className="flex items-center gap-1.5 shrink-0">
         <button
           type="button"
           onClick={(e) => handleQueueClick(e, item, true)}
           title="Play next in Continue Playing"
           className={`${
-            compact ? 'p-1.5' : 'px-2 py-1'
-          } rounded-full border text-[11px] font-medium flex items-center gap-1 transition cursor-pointer ${
+            compact ? 'w-9 h-9 justify-center' : 'px-3.5 py-2'
+          } rounded-full border text-[12px] font-medium flex items-center gap-1.5 transition cursor-pointer ${
             feedback === 'next'
               ? 'bg-emerald-500/25 border-emerald-400/60 text-emerald-300'
               : 'bg-black/65 hover:bg-white/20 border-white/15 text-zinc-200 hover:text-white'
@@ -268,11 +268,11 @@ export const SearchBarOverlay: React.FC<SearchBarOverlayProps> = ({
         >
           {feedback === 'next' ? (
             <>
-              <Check className="w-3 h-3" />
+              <Check className="w-4 h-4" />
               {!compact && <span>Next</span>}
             </>
           ) : (
-            <ListStart className="w-3.5 h-3.5" />
+            <ListStart className="w-4 h-4" />
           )}
         </button>
 
@@ -281,8 +281,8 @@ export const SearchBarOverlay: React.FC<SearchBarOverlayProps> = ({
           onClick={(e) => handleQueueClick(e, item, false)}
           title="Add to queue without interrupting playback"
           className={`${
-            compact ? 'p-1.5' : 'px-2.5 py-1'
-          } rounded-full border text-[11px] font-medium flex items-center gap-1 transition cursor-pointer ${
+            compact ? 'w-9 h-9 justify-center' : 'px-3.5 py-2'
+          } rounded-full border text-[12px] font-medium flex items-center gap-1.5 transition cursor-pointer ${
             feedback === 'queue'
               ? 'bg-emerald-500/25 border-emerald-400/60 text-emerald-300'
               : 'bg-black/65 hover:bg-white/20 border-white/15 text-zinc-200 hover:text-white'
@@ -290,12 +290,12 @@ export const SearchBarOverlay: React.FC<SearchBarOverlayProps> = ({
         >
           {feedback === 'queue' ? (
             <>
-              <Check className="w-3 h-3" />
+              <Check className="w-4 h-4" />
               {!compact && <span>Queued</span>}
             </>
           ) : (
             <>
-              <ListPlus className="w-3.5 h-3.5" />
+              <ListPlus className="w-4 h-4" />
               {!compact && <span>Queue</span>}
             </>
           )}
@@ -307,7 +307,7 @@ export const SearchBarOverlay: React.FC<SearchBarOverlayProps> = ({
   return (
     <div
       ref={containerRef}
-      className="relative z-30 flex flex-col items-center w-full max-w-[560px] pointer-events-auto"
+      className="relative z-30 flex flex-col items-center w-full max-w-[600px] pointer-events-auto"
     >
       {/* Floating Search Results Panel */}
       {isDropdownVisible && (
@@ -326,13 +326,13 @@ export const SearchBarOverlay: React.FC<SearchBarOverlayProps> = ({
           {/* Header & Filter Bar */}
           <div className="flex items-center justify-between gap-3 pb-3 mb-3 border-b border-white/10">
             <div className="flex items-center gap-2.5 overflow-x-auto no-scrollbar">
-              <div className="flex items-center gap-1 bg-white/[0.04] rounded-full p-0.5 border border-white/10 shrink-0">
+              <div className="flex items-center gap-1 bg-white/[0.04] rounded-full p-1 border border-white/10 shrink-0">
                 {FILTER_TABS.map((tab) => (
                   <button
                     key={tab.id}
                     type="button"
                     onClick={() => setActiveFilter(tab.id)}
-                    className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition cursor-pointer ${
+                    className={`px-3.5 py-1.5 rounded-full text-[12.5px] font-medium transition cursor-pointer ${
                       activeFilter === tab.id
                         ? 'bg-[var(--aesthetic-accent-strong,#C28356)] text-black font-semibold'
                         : 'text-zinc-400 hover:text-zinc-200'
@@ -351,9 +351,9 @@ export const SearchBarOverlay: React.FC<SearchBarOverlayProps> = ({
               type="button"
               onClick={() => setShowDropdown(false)}
               title="Close search results (Esc)"
-              className="text-zinc-400 hover:text-white p-1.5 rounded-full hover:bg-white/10 transition cursor-pointer shrink-0"
+              className="w-10 h-10 rounded-full flex items-center justify-center text-zinc-400 hover:text-white hover:bg-white/10 transition cursor-pointer shrink-0"
             >
-              <X className="w-4 h-4" />
+              <X className="w-5 h-5" />
             </button>
           </div>
 
@@ -407,8 +407,8 @@ export const SearchBarOverlay: React.FC<SearchBarOverlayProps> = ({
                             {/* Hover Play Indicator */}
                             <div className="absolute inset-0 bg-black/35 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
                               {item.category !== 'Artist' && (
-                                <div className="w-8 h-8 rounded-full bg-black/70 border border-white/25 flex items-center justify-center">
-                                  <Play className="w-3.5 h-3.5 text-white fill-white ml-0.5" />
+                                <div className="w-10 h-10 rounded-full bg-black/70 border border-white/25 flex items-center justify-center">
+                                  <Play className="w-4 h-4 text-white fill-white ml-0.5" />
                                 </div>
                               )}
                             </div>
@@ -649,7 +649,7 @@ export const SearchBarOverlay: React.FC<SearchBarOverlayProps> = ({
       {/* Search Bar Input Pill */}
       <form
         onSubmit={handleSubmit}
-        className="w-full flex items-center gap-3 px-5 h-[46px] rounded-full transition-all duration-200 focus-within:border-white/30"
+        className="w-full flex items-center gap-2.5 px-4 h-[52px] rounded-full transition-all duration-200 focus-within:border-white/30"
         style={{
           background: 'rgba(15, 16, 20, 0.78)',
           backdropFilter: 'blur(22px) saturate(145%)',
@@ -661,9 +661,9 @@ export const SearchBarOverlay: React.FC<SearchBarOverlayProps> = ({
         <button
           type="submit"
           title="Search"
-          className="text-zinc-400 hover:text-white transition cursor-pointer shrink-0"
+          className="w-9 h-9 rounded-full flex items-center justify-center text-zinc-400 hover:text-white hover:bg-white/10 transition cursor-pointer shrink-0"
         >
-          <Search className="w-4 h-4" />
+          <Search className="w-[18px] h-[18px]" />
         </button>
         <input
           ref={inputRef}
@@ -677,16 +677,16 @@ export const SearchBarOverlay: React.FC<SearchBarOverlayProps> = ({
           onKeyUp={stopPropagationOnly}
           onKeyPress={stopPropagationOnly}
           placeholder="Search YouTube Music"
-          className="w-full bg-transparent text-[14.5px] text-zinc-100 placeholder-zinc-400/80 outline-none border-none select-text"
+          className="w-full bg-transparent text-[15px] text-zinc-100 placeholder-zinc-400/80 outline-none border-none select-text"
         />
         {query && (
           <button
             type="button"
             onClick={clearSearch}
             title="Clear search"
-            className="text-zinc-400 hover:text-zinc-200 transition cursor-pointer"
+            className="w-9 h-9 rounded-full flex items-center justify-center text-zinc-400 hover:text-zinc-200 hover:bg-white/10 transition cursor-pointer shrink-0"
           >
-            <X className="w-4 h-4" />
+            <X className="w-[18px] h-[18px]" />
           </button>
         )}
       </form>

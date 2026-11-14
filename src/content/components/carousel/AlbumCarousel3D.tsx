@@ -242,9 +242,9 @@ export const AlbumCarousel3D: React.FC<AlbumCarousel3DProps> = ({
                     onCycleLyricsMode?.();
                   }}
                   title="Switch lyrics view (Focus / Compact / Full)"
-                  className="mt-3.5 px-4 py-2 rounded-full flex items-center gap-2 text-[13px] font-medium text-zinc-200 hover:text-white border border-white/15 bg-black/55 backdrop-blur-xl shadow-lg transition cursor-pointer"
+                  className="mt-4 px-5 py-2.5 rounded-full flex items-center gap-2 text-[14px] font-medium text-zinc-200 hover:text-white border border-white/15 bg-black/55 hover:bg-white/15 backdrop-blur-xl shadow-lg transition cursor-pointer"
                 >
-                  <Search className="w-3.5 h-3.5 text-zinc-400" />
+                  <Search className="w-4 h-4 text-zinc-300" />
                   <span>Other lyrics</span>
                 </button>
               )}
@@ -255,7 +255,7 @@ export const AlbumCarousel3D: React.FC<AlbumCarousel3DProps> = ({
 
       {/* Pagination Dots synced with queue */}
       {!lyricsOpen && queue.length > 1 && (
-        <div className="mt-1 flex items-center justify-center gap-1.5 z-30">
+        <div className="mt-1 flex items-center justify-center gap-1 z-30">
           {(() => {
             const maxDots = 9;
             const total = queue.length;
@@ -274,12 +274,16 @@ export const AlbumCarousel3D: React.FC<AlbumCarousel3DProps> = ({
                   onClick={() => onSelectQueueIndex(qItem.index)}
                   title={qItem.title}
                   aria-label={`Jump to ${qItem.title}`}
-                  className={`rounded-full transition-all duration-300 cursor-pointer ${
-                    isCurrent
-                      ? 'w-5 h-1.5 bg-white shadow-[0_0_8px_rgba(255,255,255,0.65)]'
-                      : 'w-1.5 h-1.5 bg-white/30 hover:bg-white/60'
-                  }`}
-                />
+                  className="p-2 rounded-full flex items-center justify-center hover:bg-white/10 transition cursor-pointer group/dot"
+                >
+                  <span
+                    className={`rounded-full transition-all duration-300 ${
+                      isCurrent
+                        ? 'w-7 h-2 bg-white shadow-[0_0_8px_rgba(255,255,255,0.65)]'
+                        : 'w-2.5 h-2 bg-white/35 group-hover/dot:bg-white/75'
+                    }`}
+                  />
+                </button>
               );
             });
           })()}
