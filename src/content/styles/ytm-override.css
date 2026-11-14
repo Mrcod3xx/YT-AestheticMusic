@@ -1,0 +1,146 @@
+/*
+ * Reversible Host-Page Styles for https://music.youtube.com/
+ * Strictly scoped to html[data-aesthetic-mode="on"] so removing the attribute
+ * or style tag immediately restores original YouTube Music without page reload.
+ */
+
+html[data-aesthetic-mode="on"],
+html[data-aesthetic-mode="on"] body {
+  overflow: hidden !important;
+  background-color: #07070a !important;
+}
+
+/* Keep ytmusic-app alive in the DOM so Polymer, search, & playback never pause,
+   but hide its visual chrome behind our Aesthetic UI overlay.
+   NOTE: Do not use visibility:hidden on ytmusic-nav-bar so ytmusic-search-box
+   remains focusable if needed. */
+html[data-aesthetic-mode="on"] ytmusic-nav-bar,
+html[data-aesthetic-mode="on"] #nav-bar-background,
+html[data-aesthetic-mode="on"] #nav-bar-divider,
+html[data-aesthetic-mode="on"] ytmusic-guide-renderer,
+html[data-aesthetic-mode="on"] #guide-wrapper,
+html[data-aesthetic-mode="on"] #mini-guide-background,
+html[data-aesthetic-mode="on"] #mini-guide,
+html[data-aesthetic-mode="on"] ytmusic-player-bar,
+html[data-aesthetic-mode="on"] ytmusic-mealbar-promo-renderer,
+html[data-aesthetic-mode="on"] tp-yt-paper-toast {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* Hide main browse content visually when Aesthetic Mode is active */
+html[data-aesthetic-mode="on"] ytmusic-app-layout > #content {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* Keep player-page behind our Shadow DOM root (#aesthetic-music-root at z-index: 9999)
+   when video background is NOT active so its queues & AV toggle remain alive. */
+html[data-aesthetic-mode="on"]:not([data-aesthetic-bg="video"]) ytmusic-player-page {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* Native Video Promotion:
+   Unwrap ALL containing blocks (transform, will-change, backdrop-filter, perspective,
+   contain, container-type, margins, nav/guide/player-bar offsets) on the entire
+   ancestor chain so video.html5-main-video covers the true 100vw x 100vh viewport
+   edge-to-edge with zero top/left/bottom black bars. */
+html[data-aesthetic-mode="on"][data-aesthetic-bg="video"] ytmusic-app,
+html[data-aesthetic-mode="on"][data-aesthetic-bg="video"] ytmusic-app-layout {
+  transform: none !important;
+  will-change: auto !important;
+  perspective: none !important;
+  filter: none !important;
+  backdrop-filter: none !important;
+  contain: none !important;
+  container-type: normal !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  --ytmusic-nav-bar-height: 0px !important;
+  --ytmusic-guide-width: 0px !important;
+  --ytmusic-player-bar-height: 0px !important;
+}
+
+html[data-aesthetic-mode="on"][data-aesthetic-bg="video"] ytmusic-player-page,
+html[data-aesthetic-mode="on"][data-aesthetic-bg="video"] ytmusic-player-page > .content,
+html[data-aesthetic-mode="on"][data-aesthetic-bg="video"] ytmusic-player-page #main-panel,
+html[data-aesthetic-mode="on"][data-aesthetic-bg="video"] ytmusic-player,
+html[data-aesthetic-mode="on"][data-aesthetic-bg="video"] ytmusic-player #song-video,
+html[data-aesthetic-mode="on"][data-aesthetic-bg="video"] ytmusic-player #movie_player,
+html[data-aesthetic-mode="on"][data-aesthetic-bg="video"] ytmusic-player .html5-video-container {
+  position: fixed !important;
+  inset: 0 !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  min-width: 100vw !important;
+  min-height: 100vh !important;
+  max-width: none !important;
+  max-height: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  transform: none !important;
+  will-change: auto !important;
+  perspective: none !important;
+  filter: none !important;
+  backdrop-filter: none !important;
+  contain: none !important;
+  container-type: normal !important;
+  overflow: visible !important;
+  clip-path: none !important;
+  background: transparent !important;
+  z-index: 1 !important;
+  pointer-events: none !important;
+}
+
+html[data-aesthetic-mode="on"][data-aesthetic-bg="video"] ytmusic-player #song-image,
+html[data-aesthetic-mode="on"][data-aesthetic-bg="video"] ytmusic-player .player-controls,
+html[data-aesthetic-mode="on"][data-aesthetic-bg="video"] ytmusic-player .ytp-chrome-top,
+html[data-aesthetic-mode="on"][data-aesthetic-bg="video"] ytmusic-player .ytp-chrome-bottom,
+html[data-aesthetic-mode="on"][data-aesthetic-bg="video"] ytmusic-player .ytp-watermark,
+html[data-aesthetic-mode="on"][data-aesthetic-bg="video"] ytmusic-player .ytp-gradient-top,
+html[data-aesthetic-mode="on"][data-aesthetic-bg="video"] ytmusic-player .ytp-gradient-bottom,
+html[data-aesthetic-mode="on"][data-aesthetic-bg="video"] ytmusic-player .ytp-bezel,
+html[data-aesthetic-mode="on"][data-aesthetic-bg="video"] ytmusic-player .ytp-ce-element,
+html[data-aesthetic-mode="on"][data-aesthetic-bg="video"] ytmusic-player-page #side-panel,
+html[data-aesthetic-mode="on"][data-aesthetic-bg="video"] ytmusic-player-page .av-toggle-container,
+html[data-aesthetic-mode="on"][data-aesthetic-bg="video"] ytmusic-av-toggle {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+html[data-aesthetic-mode="on"][data-aesthetic-bg="video"] video.html5-main-video {
+  position: fixed !important;
+  inset: 0 !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  min-width: 100vw !important;
+  min-height: 100vh !important;
+  max-width: none !important;
+  max-height: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  object-fit: cover !important;
+  object-position: center center !important;
+  transform: none !important;
+  will-change: auto !important;
+  display: block !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  z-index: 1 !important;
+  pointer-events: none !important;
+}
+
+html[data-aesthetic-mode="on"][data-aesthetic-bg="video"] #aesthetic-music-root {
+  z-index: 9999 !important;
+}

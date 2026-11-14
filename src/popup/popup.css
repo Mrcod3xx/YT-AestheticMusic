@@ -1,0 +1,16 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  width: 356px;
+  min-height: 480px;
+  margin: 0;
+  background-color: #0d0d11;
+  color: #f4f4f5;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+input[type='range'] {
+  accent-color: #C28356;
+}
