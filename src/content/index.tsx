@@ -37,7 +37,13 @@ import {
   getCachedLyricsForCurrentTrack,
   requestLyricsForTrack,
 } from './adapters/lyricsAdapter';
-import { searchYouTubeMusic } from './adapters/searchAdapter';
+import {
+  addBrowseTrackToQueue,
+  fetchBrowseDetails,
+  playBrowseCollection,
+  playBrowseTrack,
+  searchYouTubeMusic,
+} from './adapters/searchAdapter';
 import { syncNativeVideoModePreference } from './adapters/videoAdapter';
 import shadowStyles from './styles/shadow.css?inline';
 import hostOverrideStyles from './styles/ytm-override.css?inline';
@@ -208,6 +214,25 @@ const appActions: AestheticAppActions = {
         : undefined,
     }));
   },
+  onFetchBrowseDetails: (browseId, kind) => fetchBrowseDetails(browseId, kind),
+  onPlayBrowseCollection: async (params) => {
+    await playBrowseCollection(params);
+    setTimeout(scheduleRender, 250);
+    scheduleQueueRefresh(650);
+  },
+  onPlayBrowseTrack: (track) => {
+    playBrowseTrack(track);
+    setTimeout(scheduleRender, 250);
+    scheduleQueueRefresh(650);
+  },
+  onQueueBrowseTrack: async (track, playNext) => {
+    const ok = await addBrowseTrackToQueue(track, playNext, (nextQueue) => {
+      cachedQueue = nextQueue;
+      scheduleRender();
+    });
+    scheduleQueueRefresh(200);
+    return ok;
+  },
 };
 
 function injectHostFontsAndStyles() {
@@ -307,12 +332,17 @@ function renderShadowUI() {
   const liveLyrics = getCachedLyricsForCurrentTrack(liveTrack);
   const liveQueue =
     cachedQueue.length > 0 ? cachedQueue : readDomQueueFallback();
+  const selectedQueueVid = liveQueue.find((q) => q.isSelected)?.videoId;
+  const resolvedLiveTrack =
+    liveTrack && !liveTrack.videoId && selectedQueueVid
+      ? { ...liveTrack, videoId: selectedQueueVid }
+      : liveTrack;
 
   reactRoot.render(
     <React.StrictMode>
       <AestheticApp
         settings={currentSettings}
-        liveTrack={liveTrack}
+        liveTrack={resolvedLiveTrack}
         liveQueue={liveQueue}
         liveLyrics={liveLyrics}
         actions={appActions}

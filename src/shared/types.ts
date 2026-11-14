@@ -6,6 +6,46 @@ export type LyricsMode = 'focus' | 'compact' | 'full';
 
 export type PlayerPosition = 'bottom-center' | 'bottom-wide' | 'compact-dock';
 
+export type SearchResultCategory = 'Song' | 'Video' | 'Album' | 'Artist' | 'Playlist';
+
+export interface BrowseTarget {
+  browseId: string;
+  kind?: 'Artist' | 'Album' | 'Playlist';
+  previewTitle?: string;
+  previewSubtitle?: string;
+  previewArtworkUrl?: string;
+}
+
+export interface BrowseTrackItem {
+  id: string;
+  index: number;
+  title: string;
+  subtitle: string;
+  album?: string;
+  artist?: string;
+  duration: string;
+  artworkUrl: string;
+  videoId?: string;
+  playlistId?: string;
+  watchEndpoint?: Record<string, unknown>;
+  addToQueueEndpoint?: Record<string, unknown>;
+  playNextEndpoint?: Record<string, unknown>;
+}
+
+export interface BrowseDetailsData {
+  browseId: string;
+  kind: 'Artist' | 'Album' | 'Playlist';
+  title: string;
+  subtitle: string;
+  description?: string;
+  artworkUrl: string;
+  playlistId?: string;
+  playEndpoint?: Record<string, unknown>;
+  shuffleEndpoint?: Record<string, unknown>;
+  tracks: BrowseTrackItem[];
+  tracksHeading: string;
+}
+
 export interface AestheticSettings {
   // General
   enabled: boolean;
@@ -63,6 +103,7 @@ export interface AestheticSettings {
 
 export interface TrackMetadata {
   id: string;
+  videoId?: string;
   title: string;
   artist: string;
   album: string;

@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Aesthetic Music — YouTube Music Desktop Player",
   "short_name": "Aesthetic Music",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Transform YouTube Music into a cinematic, immersive macOS-style desktop music player with live video and ambient album backgrounds.",
   "permissions": [
     "storage",

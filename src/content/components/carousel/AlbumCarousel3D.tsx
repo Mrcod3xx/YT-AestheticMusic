@@ -69,8 +69,17 @@ export const AlbumCarousel3D: React.FC<AlbumCarousel3DProps> = ({
     return candidate;
   };
 
-  const offsets: (-2 | -1 | 0 | 1 | 2)[] = [-2, -1, 0, 1, 2];
-  const slots: CarouselSlot[] = offsets.map((offset) => ({
+  const allOffsets: (-2 | -1 | 0 | 1 | 2)[] = [-2, -1, 0, 1, 2];
+  const visibleOffsets: (-2 | -1 | 0 | 1 | 2)[] =
+    queue.length <= 1
+      ? [0]
+      : queue.length === 2
+      ? [0, 1]
+      : queue.length <= 4
+      ? [-1, 0, 1]
+      : allOffsets;
+
+  const slots: CarouselSlot[] = visibleOffsets.map((offset) => ({
     offset,
     item: getTrackAtOffset(offset),
   }));
@@ -110,38 +119,38 @@ export const AlbumCarousel3D: React.FC<AlbumCarousel3DProps> = ({
     switch (offset) {
       case 0:
         return {
-          transform: 'translate3d(0px, 0px, 90px) rotateY(0deg) scale(1)',
+          transform: 'translate3d(0px, 0px, 95px) rotateY(0deg) scale(1)',
           zIndex: 30,
           opacity: 1,
           filter: 'brightness(1.04)',
         };
       case -1:
         return {
-          transform: 'translate3d(-205px, 8px, 12px) rotateY(16deg) scale(0.84)',
+          transform: 'translate3d(-218px, 8px, 14px) rotateY(15deg) scale(0.84)',
           zIndex: 20,
           opacity: 0.94,
-          filter: 'brightness(0.82)',
+          filter: 'brightness(0.84)',
         };
       case 1:
         return {
-          transform: 'translate3d(205px, 8px, 12px) rotateY(-16deg) scale(0.84)',
+          transform: 'translate3d(218px, 8px, 14px) rotateY(-15deg) scale(0.84)',
           zIndex: 20,
           opacity: 0.94,
-          filter: 'brightness(0.82)',
+          filter: 'brightness(0.84)',
         };
       case -2:
         return {
-          transform: 'translate3d(-368px, 16px, -45px) rotateY(26deg) scale(0.70)',
+          transform: 'translate3d(-388px, 16px, -45px) rotateY(24deg) scale(0.70)',
           zIndex: 10,
           opacity: 0.78,
-          filter: 'brightness(0.66)',
+          filter: 'brightness(0.68)',
         };
       case 2:
         return {
-          transform: 'translate3d(368px, 16px, -45px) rotateY(-26deg) scale(0.70)',
+          transform: 'translate3d(388px, 16px, -45px) rotateY(-24deg) scale(0.70)',
           zIndex: 10,
           opacity: 0.78,
-          filter: 'brightness(0.66)',
+          filter: 'brightness(0.68)',
         };
     }
   };
@@ -243,6 +252,39 @@ export const AlbumCarousel3D: React.FC<AlbumCarousel3DProps> = ({
           );
         })}
       </div>
+
+      {/* Pagination Dots synced with queue */}
+      {!lyricsOpen && queue.length > 1 && (
+        <div className="mt-1 flex items-center justify-center gap-1.5 z-30">
+          {(() => {
+            const maxDots = 9;
+            const total = queue.length;
+            const start =
+              total <= maxDots
+                ? 0
+                : Math.max(0, Math.min(total - maxDots, centerIndex - 4));
+            const visibleSlice = queue.slice(start, start + maxDots);
+            return visibleSlice.map((qItem, relIdx) => {
+              const absIdx = start + relIdx;
+              const isCurrent = absIdx === centerIndex;
+              return (
+                <button
+                  key={`dot-${qItem.index}-${absIdx}`}
+                  type="button"
+                  onClick={() => onSelectQueueIndex(qItem.index)}
+                  title={qItem.title}
+                  aria-label={`Jump to ${qItem.title}`}
+                  className={`rounded-full transition-all duration-300 cursor-pointer ${
+                    isCurrent
+                      ? 'w-5 h-1.5 bg-white shadow-[0_0_8px_rgba(255,255,255,0.65)]'
+                      : 'w-1.5 h-1.5 bg-white/30 hover:bg-white/60'
+                  }`}
+                />
+              );
+            });
+          })()}
+        </div>
+      )}
     </div>
   );
 };

@@ -1,6 +1,6 @@
 # Aesthetic Music — YouTube Music Desktop Transformation Extension
 
-**Current Version:** `0.2.0` — see [CHANGELOG.md](./CHANGELOG.md)
+**Current Version:** `0.3.0` — see [CHANGELOG.md](./CHANGELOG.md)
 
 A Chromium Manifest V3 extension for **Brave Browser** that transforms `https://music.youtube.com/` into a cinematic, macOS-style standalone music player while preserving native playback, live music video backgrounds, and queue/lyrics integration.
 

@@ -11,6 +11,33 @@ Use `npm run version:bump -- <patch|minor|major|x.y.z>` after implementing and v
 
 ---
 
+## [0.3.0] - 2026-11-15 — Reference Experience Completion: Rich Search, Artist/Album/Playlist Details & Lyrics-Only Mode
+
+### Added
+- **Unified Artist, Album & Playlist Details Panel (`BrowseDetailsModal.tsx`)**:
+  - Split 2-column dark glass modal displaying high-res entity artwork, title, bio/metadata, real `Play` & `Shuffle` triggers, and scrollable tracklists (`Top Songs`, `Tracks`, `Playlist Tracks`) with artwork, subtitles, durations, hover `Play Next` / `Add to Queue` buttons, and live active song highlighting.
+  - Added InnerTube `/youtubei/v1/browse` (`FETCH_BROWSE_DETAILS`) and playback (`PLAY_ENDPOINT`) handlers in `mainWorldBridge.ts` + pure parsers in `src/shared/innertubeParsers.ts` (handling immersive Artist headers, two-column Album headers, `musicPlaylistShelfRenderer` Playlists, and Artist Top Songs expansion when YTM returns a `Show all` endpoint).
+- **Rich Visual Search Overlay (`SearchBarOverlay.tsx`)**:
+  - Upgraded `All` view with **Top Results** square card grid, **Artists** circular avatar shelf, and `Songs, Albums & Releases` rows with direct `Play Next` and `Queue` actions.
+  - Added filter tabs for `All | Artists | Songs | Videos | Albums | Playlists`, automatic `<input>` focus when opening Search, Shadow DOM `composedPath` click-outside dismissal, and query/results preservation when inspecting and returning from Details panels.
+- **Lyrics-Only Eye Toggle (`AestheticApp.tsx`, `FloatingQuickActions.tsx`)**:
+  - Clicking the Eye button while in Lyrics Mode now switches between **Lyrics with Artwork** and **Lyrics-only centered mode** (hiding the collapsed left album card and `Continue Playing` sidebar without hiding `LyricsStage`), restoring both on second click.
+- **Carousel Pagination & Short-Queue Handling (`AlbumCarousel3D.tsx`)**:
+  - Added synced clickable pagination dots beneath the 5-card 3D carousel (`!lyricsOpen`) and avoided duplicating identical cards when queues contain fewer than 5 tracks.
+- **InnerTube Parser Test Coverage (`tests/innertubeParsers.test.ts`)**:
+  - Added unit tests covering category classification, `Top Results` & `Artists` search extraction, Artist/Album/Playlist browse parsing, artwork inheritance, and Shuffle endpoint extraction.
+
+### Changed
+- Merged `queueMediaItem` helper in `src/content/adapters/searchAdapter.ts` for consistent search and detail-panel queuing, and populated `TrackMetadata.videoId` from active queue state in `src/content/index.tsx` for exact track highlight matching.
+- Synchronized `FloatingQuickActions` container width with `settings.playerPosition` (`bottom-wide`, `compact-dock`, `bottom-center`) and refined 3D carousel spacing and perspective angles.
+- Cleaned up `LyricsStage.tsx` manual-scroll timeout tracking on unmount and cached `<video>` element lookup in the `80ms` lip-sync interval.
+
+### Fixed
+- Clicking an Artist, Album, or Playlist result in Search no longer triggers silent background `yt-navigate` on the hidden YouTube Music page; instead it opens the corresponding `BrowseDetailsModal` directly inside Aesthetic Mode and returns cleanly to preserved search results on close (`×` or `Esc`).
+- Improved category classification in `classifySearchCategory` so Top Result Artist/Album cards with companion radio buttons remain classified accurately and songs containing `"EP"` or `"Single"` are not misclassified.
+
+---
+
 ## [0.2.0] - 2026-11-15 — Customization Milestone, Optimization & Hardening (Phases 6 & 7)
 
 ### Added

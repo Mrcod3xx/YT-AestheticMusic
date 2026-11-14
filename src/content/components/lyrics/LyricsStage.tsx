@@ -232,10 +232,20 @@ export const LyricsStage: React.FC<LyricsStageProps> = ({
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const lineRefs = useRef<Record<number, HTMLElement | null>>({});
   const manualScrollUntilRef = useRef<number>(0);
+  const manualScrollTimerRef = useRef<number | null>(null);
+  const videoElRef = useRef<HTMLVideoElement | null>(null);
 
   const [pausedFollow, setPausedFollow] = useState(false);
   const [spotlightIdx, setSpotlightIdx] = useState(0);
   const [liveTimeMs, setLiveTimeMs] = useState(currentTimeMs);
+
+  useEffect(() => {
+    return () => {
+      if (manualScrollTimerRef.current !== null) {
+        window.clearTimeout(manualScrollTimerRef.current);
+      }
+    };
+  }, []);
 
   // Sync baseline timestamp when prop changes (e.g. timeupdate or manual seek)
   useEffect(() => {
@@ -249,9 +259,12 @@ export const LyricsStage: React.FC<LyricsStageProps> = ({
     }
 
     const timer = window.setInterval(() => {
-      const videoEl = document.querySelector(
-        'video.html5-main-video'
-      ) as HTMLVideoElement | null;
+      if (!videoElRef.current || !videoElRef.current.isConnected) {
+        videoElRef.current = document.querySelector(
+          'video.html5-main-video'
+        ) as HTMLVideoElement | null;
+      }
+      const videoEl = videoElRef.current;
       if (videoEl && Number.isFinite(videoEl.currentTime)) {
         setLiveTimeMs(videoEl.currentTime * 1000);
       }
@@ -314,7 +327,11 @@ export const LyricsStage: React.FC<LyricsStageProps> = ({
     if (!lyrics.isSynced) return;
     manualScrollUntilRef.current = Date.now() + 4200;
     setPausedFollow(true);
-    window.setTimeout(() => {
+    if (manualScrollTimerRef.current !== null) {
+      window.clearTimeout(manualScrollTimerRef.current);
+    }
+    manualScrollTimerRef.current = window.setTimeout(() => {
+      manualScrollTimerRef.current = null;
       if (Date.now() >= manualScrollUntilRef.current) {
         setPausedFollow(false);
       }

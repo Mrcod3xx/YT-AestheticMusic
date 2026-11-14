@@ -1,7 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   AestheticSettings,
   BackgroundMode,
+  BrowseDetailsData,
+  BrowseTarget,
+  BrowseTrackItem,
   LyricsData,
   LyricsMode,
   QueueTrackItem,
@@ -20,6 +23,7 @@ import { ContinuePlayingSidebar } from './sidebar/ContinuePlayingSidebar';
 import { AlbumCarousel3D } from './carousel/AlbumCarousel3D';
 import { LyricsStage } from './lyrics/LyricsStage';
 import { SearchBarOverlay, SearchResultItem } from './search/SearchBarOverlay';
+import { BrowseDetailsModal } from './search/BrowseDetailsModal';
 import { FloatingQuickActions } from './player/FloatingQuickActions';
 import { FloatingPlayerBar } from './player/FloatingPlayerBar';
 import { InAppSettingsPopover } from './settings/InAppSettingsPopover';
@@ -41,6 +45,21 @@ export interface AestheticAppActions {
   onRefreshQueue: () => void;
   onRetryLyrics: () => void;
   onSearch: (query: string) => Promise<SearchResultItem[]>;
+  onFetchBrowseDetails: (
+    browseId: string,
+    kind?: 'Artist' | 'Album' | 'Playlist'
+  ) => Promise<BrowseDetailsData | null>;
+  onPlayBrowseCollection: (params: {
+    endpoint?: Record<string, unknown>;
+    playlistId?: string;
+    shuffle?: boolean;
+    tracks?: BrowseTrackItem[];
+  }) => void;
+  onPlayBrowseTrack: (track: BrowseTrackItem) => void;
+  onQueueBrowseTrack: (
+    track: BrowseTrackItem,
+    playNext: boolean
+  ) => Promise<boolean>;
 }
 
 interface AestheticAppProps {
@@ -60,9 +79,15 @@ export const AestheticApp: React.FC<AestheticAppProps> = ({
 }) => {
   const [zenMode, setZenMode] = useState(false);
   const [lyricsOpen, setLyricsOpen] = useState(settings.lyricsOpen);
+  const [lyricsOnly, setLyricsOnly] = useState(false);
   const [lyricsMode, setLyricsMode] = useState<LyricsMode>(settings.defaultLyricsMode);
   const [settingsPopoverOpen, setSettingsPopoverOpen] = useState(false);
   const [customWallpaperVersion, setCustomWallpaperVersion] = useState(0);
+  const [activeBrowseTarget, setActiveBrowseTarget] = useState<BrowseTarget | null>(null);
+  const [browseDetails, setBrowseDetails] = useState<BrowseDetailsData | null>(null);
+  const [browseLoading, setBrowseLoading] = useState(false);
+  const [browseError, setBrowseError] = useState<string | null>(null);
+  const browseRequestIdRef = useRef(0);
   const [isTabHidden, setIsTabHidden] = useState(() =>
     typeof document !== 'undefined' ? document.hidden : false
   );
@@ -75,7 +100,16 @@ export const AestheticApp: React.FC<AestheticAppProps> = ({
 
   useEffect(() => {
     setLyricsOpen(settings.lyricsOpen);
+    if (!settings.lyricsOpen) {
+      setLyricsOnly(false);
+    }
   }, [settings.lyricsOpen]);
+
+  useEffect(() => {
+    if (!settings.showSearchBar) {
+      setActiveBrowseTarget(null);
+    }
+  }, [settings.showSearchBar]);
 
   useEffect(() => {
     setLyricsMode(settings.defaultLyricsMode);
@@ -89,11 +123,15 @@ export const AestheticApp: React.FC<AestheticAppProps> = ({
     liveQueue.find((q) => q.isSelected) || liveQueue[0] || null;
 
   const activeTrack: TrackMetadata = hasLiveTrack
-    ? liveTrack!
+    ? {
+        ...liveTrack!,
+        videoId: liveTrack!.videoId || selectedQueueItem?.videoId,
+      }
     : selectedQueueItem
     ? {
         ...SAMPLE_ACTIVE_TRACK,
         id: `queue-${selectedQueueItem.index}-${selectedQueueItem.title}`,
+        videoId: selectedQueueItem.videoId,
         title: selectedQueueItem.title,
         artist: selectedQueueItem.artist,
         album: '',
@@ -205,7 +243,44 @@ export const AestheticApp: React.FC<AestheticAppProps> = ({
     }
   };
 
+  const handleOpenBrowseDetails = async (target: BrowseTarget) => {
+    const reqId = ++browseRequestIdRef.current;
+    setActiveBrowseTarget(target);
+    setBrowseError(null);
+    if (browseDetails?.browseId !== target.browseId) {
+      setBrowseDetails(null);
+    }
+    setBrowseLoading(true);
+    try {
+      const fetched = await actions.onFetchBrowseDetails(target.browseId, target.kind);
+      if (browseRequestIdRef.current !== reqId) return;
+      if (fetched) {
+        setBrowseDetails(fetched);
+      } else {
+        setBrowseError('Unable to load YouTube Music details for this selection.');
+      }
+    } catch {
+      if (browseRequestIdRef.current === reqId) {
+        setBrowseError('Network error while loading YouTube Music details.');
+      }
+    } finally {
+      if (browseRequestIdRef.current === reqId) {
+        setBrowseLoading(false);
+      }
+    }
+  };
+
+  const handleToggleEye = () => {
+    if (isLyricsVisible) {
+      setLyricsOnly((prev) => !prev);
+    } else {
+      setZenMode((prev) => !prev);
+    }
+  };
+
   const isLyricsVisible = lyricsOpen && settings.lyricsEnabled;
+  const hideLyricsArtwork = isLyricsVisible && lyricsOnly;
+  const detailsModalOpen = Boolean(activeBrowseTarget) && !zenMode;
   const themeTokens = getThemeTokens(settings);
   const effectsPaused = isTabHidden && settings.pauseWhenHidden;
   const effectivePanelAlpha = settings.lowGpuMode
@@ -250,7 +325,7 @@ export const AestheticApp: React.FC<AestheticAppProps> = ({
 
       {/* Left Floating 3D-Angled "Continue Playing" Sidebar */}
       <ContinuePlayingSidebar
-        visible={settings.showSidebar && !zenMode}
+        visible={settings.showSidebar && !zenMode && !hideLyricsArtwork}
         currentTrack={activeTrack}
         queue={activeQueue}
         onSelectTrack={handleSelectQueueItem}
@@ -279,10 +354,15 @@ export const AestheticApp: React.FC<AestheticAppProps> = ({
         />
       </header>
 
-      {/* Center Stage: 3D Album Artwork Carousel + Lyrics Stage */}
+      {/* Center Stage: 3D Album Carousel / Lyrics Stage / Browse Details Modal */}
       <main className="flex-1 w-full flex flex-col items-center justify-center relative z-20 px-6 pointer-events-none">
         <AlbumCarousel3D
-          visible={settings.showCarousel && !zenMode}
+          visible={
+            settings.showCarousel &&
+            !zenMode &&
+            !detailsModalOpen &&
+            !hideLyricsArtwork
+          }
           lyricsOpen={isLyricsVisible}
           currentTrack={activeTrack}
           queue={activeQueue}
@@ -295,14 +375,18 @@ export const AestheticApp: React.FC<AestheticAppProps> = ({
         />
 
         <LyricsStage
-          open={isLyricsVisible && !zenMode}
+          open={isLyricsVisible && !zenMode && !detailsModalOpen}
           mode={lyricsMode}
           lyrics={liveLyrics}
           currentTimeMs={activeTrack.currentTime * 1000}
           isPlaying={activeTrack.isPlaying}
           isVideoActive={activeTrack.isVideoActive}
-          carouselVisible={settings.showCarousel && !zenMode}
-          sidebarVisible={settings.showSidebar && !zenMode}
+          carouselVisible={
+            settings.showCarousel && !zenMode && !hideLyricsArtwork
+          }
+          sidebarVisible={
+            settings.showSidebar && !zenMode && !hideLyricsArtwork
+          }
           fontSize={settings.lyricsFontSize}
           highlightActive={settings.lyricsHighlightActive}
           borderRadius={settings.borderRadius}
@@ -314,6 +398,36 @@ export const AestheticApp: React.FC<AestheticAppProps> = ({
           onSeekSeconds={actions.onSeek}
           onRetry={actions.onRetryLyrics}
         />
+
+        <BrowseDetailsModal
+          target={detailsModalOpen ? activeBrowseTarget : null}
+          details={browseDetails}
+          loading={browseLoading}
+          error={browseError}
+          activeTrack={activeTrack}
+          borderRadius={settings.borderRadius}
+          onClose={() => setActiveBrowseTarget(null)}
+          onRetry={() => {
+            if (activeBrowseTarget) {
+              void handleOpenBrowseDetails(activeBrowseTarget);
+            }
+          }}
+          onPlayCollection={(shuffle) => {
+            if (!browseDetails) return;
+            actions.onPlayBrowseCollection({
+              endpoint: shuffle
+                ? browseDetails.shuffleEndpoint
+                : browseDetails.playEndpoint,
+              playlistId: browseDetails.playlistId,
+              shuffle,
+              tracks: browseDetails.tracks,
+            });
+          }}
+          onPlayTrack={(track) => actions.onPlayBrowseTrack(track)}
+          onQueueTrack={(track, playNext) =>
+            actions.onQueueBrowseTrack(track, playNext)
+          }
+        />
       </main>
 
       {/* Bottom Dock Area: Search Bar + Quick Action Pills + Floating Player Bar */}
@@ -322,19 +436,28 @@ export const AestheticApp: React.FC<AestheticAppProps> = ({
         {!zenMode && (
           <SearchBarOverlay
             visible={settings.showSearchBar}
+            detailsOpen={detailsModalOpen}
             onSearch={actions.onSearch}
+            onOpenDetails={handleOpenBrowseDetails}
           />
         )}
 
         {/* Floating Quick Action Pills */}
         <FloatingQuickActions
           zenMode={zenMode}
+          lyricsOpen={isLyricsVisible}
+          lyricsOnly={lyricsOnly}
           searchVisible={settings.showSearchBar && !zenMode}
           backgroundMode={settings.backgroundMode}
-          onToggleZenMode={() => setZenMode((z) => !z)}
-          onToggleSearch={() =>
-            handleUpdateSettings({ showSearchBar: !settings.showSearchBar })
-          }
+          playerPosition={settings.playerPosition}
+          onToggleEye={handleToggleEye}
+          onToggleSearch={() => {
+            const nextShow = !settings.showSearchBar;
+            if (!nextShow) {
+              setActiveBrowseTarget(null);
+            }
+            handleUpdateSettings({ showSearchBar: nextShow });
+          }}
           onCycleBackgroundMode={handleCycleBackgroundMode}
           onToggleFullscreen={handleToggleFullscreen}
         />
@@ -357,6 +480,10 @@ export const AestheticApp: React.FC<AestheticAppProps> = ({
           onToggleLyrics={() => {
             const nextOpen = !lyricsOpen;
             setLyricsOpen(nextOpen);
+            if (!nextOpen) {
+              setLyricsOnly(false);
+            }
+            setActiveBrowseTarget(null);
             saveSettings({ lyricsOpen: nextOpen });
           }}
           onToggleSidebar={() =>

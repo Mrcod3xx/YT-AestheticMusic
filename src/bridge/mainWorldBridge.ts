@@ -8,6 +8,16 @@
  *    is never swallowed by YouTube Music's global shortcut manager.
  */
 
+import type { BrowseTrackItem } from '../shared/types';
+import {
+  RawBridgeSearchResult,
+  extractSearchRenderers,
+  extractTracksFromBrowseShelf,
+  parseBrowseDetails,
+  pickBestThumbnail,
+  upgradeGoogleImage,
+} from '../shared/innertubeParsers';
+
 interface BridgeRequestDetail {
   action:
     | 'PING'
@@ -20,7 +30,9 @@ interface BridgeRequestDetail {
     | 'SEARCH_YTM'
     | 'PLAY_SEARCH_RESULT'
     | 'ADD_TO_QUEUE'
-    | 'GET_LYRICS';
+    | 'GET_LYRICS'
+    | 'FETCH_BROWSE_DETAILS'
+    | 'PLAY_ENDPOINT';
   requestId: string;
   payload?: Record<string, unknown>;
 }
@@ -41,21 +53,6 @@ interface PolymerRuns {
   }>;
 }
 
-interface ParsedSearchResult {
-  id: string;
-  searchIndex: number;
-  title: string;
-  subtitle: string;
-  category: 'Song' | 'Video' | 'Album' | 'Artist' | 'Playlist';
-  artworkUrl: string;
-  videoId?: string;
-  playlistId?: string;
-  browseId?: string;
-  watchEndpoint?: Record<string, unknown>;
-  addToQueueEndpoint?: Record<string, unknown>;
-  playNextEndpoint?: Record<string, unknown>;
-}
-
 // Shield Shadow DOM inputs from YouTube Music's global capture/bubble keyboard shortcuts
 (function installKeyboardShield() {
   const shield = (e: KeyboardEvent) => {
@@ -74,23 +71,6 @@ interface ParsedSearchResult {
   window.addEventListener('keypress', shield, true);
   window.addEventListener('keyup', shield, true);
 })();
-
-function upgradeGoogleImage(url: string): string {
-  if (!url) return '';
-  if (url.includes('lh3.googleusercontent.com') || url.includes('yt3.ggpht.com')) {
-    return url.replace(/=w\d+-h\d+[^&?]*/g, '=w1000-h1000-l90-rj');
-  }
-  if (url.includes('i.ytimg.com')) {
-    return url.replace(/(hqdefault|mqdefault|sddefault)\.jpg/, 'hq720.jpg');
-  }
-  return url;
-}
-
-function pickBestThumbnail(thumbnails?: PolymerThumbnail[]): string {
-  if (!Array.isArray(thumbnails) || thumbnails.length === 0) return '';
-  const last = thumbnails[thumbnails.length - 1];
-  return last?.url || thumbnails[0]?.url || '';
-}
 
 interface RawQueueEntry {
   playlistPanelVideoRenderer?: Record<string, unknown>;
@@ -452,321 +432,89 @@ function extractQueueItems() {
   });
 }
 
-function classifySubtitle(
-  subtitleText: string,
-  shelfTitle = '',
-  hasVideoId = false
-): 'Song' | 'Video' | 'Album' | 'Artist' | 'Playlist' {
-  const lower = `${shelfTitle} ${subtitleText}`.toLowerCase();
-  if (lower.includes('video')) return 'Video';
-  if (lower.includes('album') || lower.includes('single') || lower.includes('ep')) return 'Album';
-  if (lower.includes('artist') || lower.includes('subscribers')) return 'Artist';
-  if (lower.includes('playlist')) return 'Playlist';
-  if (hasVideoId) return 'Song';
-  return 'Song';
-}
-
-function extractQueueEndpoints(menuItems: unknown): {
-  addToQueueEndpoint?: Record<string, unknown>;
-  playNextEndpoint?: Record<string, unknown>;
-  queuePlaylistId?: string;
-} {
-  let addToQueueEndpoint: Record<string, unknown> | undefined;
-  let playNextEndpoint: Record<string, unknown> | undefined;
-  let queuePlaylistId: string | undefined;
-
-  if (!Array.isArray(menuItems)) {
-    return {};
-  }
-
-  for (const entry of menuItems) {
-    const msi = (entry as Record<string, unknown>)?.menuServiceItemRenderer as
-      | {
-          serviceEndpoint?: {
-            queueAddEndpoint?: {
-              queueInsertPosition?: string;
-              queueTarget?: { videoId?: string; playlistId?: string };
-            };
-          };
-        }
-      | undefined;
-    const ep = msi?.serviceEndpoint;
-    const qAdd = ep?.queueAddEndpoint;
-    if (!qAdd) continue;
-
-    if (!queuePlaylistId && qAdd.queueTarget?.playlistId) {
-      queuePlaylistId = qAdd.queueTarget.playlistId;
-    }
-
-    if (qAdd.queueInsertPosition === 'INSERT_AT_END' && !addToQueueEndpoint) {
-      addToQueueEndpoint = ep as unknown as Record<string, unknown>;
-    } else if (
-      qAdd.queueInsertPosition === 'INSERT_AFTER_CURRENT_VIDEO' &&
-      !playNextEndpoint
-    ) {
-      playNextEndpoint = ep as unknown as Record<string, unknown>;
-    }
-  }
-
-  return { addToQueueEndpoint, playNextEndpoint, queuePlaylistId };
-}
-
-// Recursively walk any InnerTube JSON structure and extract every musicCardShelfRenderer and musicResponsiveListItemRenderer
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function extractRenderersRecursively(root: any): ParsedSearchResult[] {
-  const results: ParsedSearchResult[] = [];
-  const seenKeys = new Set<string>();
-  let idxCounter = 0;
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  function walk(node: any, currentShelfTitle = '') {
-    if (!node || typeof node !== 'object') return;
-
-    if (Array.isArray(node)) {
-      for (const child of node) {
-        walk(child, currentShelfTitle);
-      }
-      return;
-    }
-
-    // Track shelf title if entering a musicShelfRenderer
-    let nextShelfTitle = currentShelfTitle;
-    if (node.musicShelfRenderer?.title?.runs?.[0]?.text) {
-      nextShelfTitle = node.musicShelfRenderer.title.runs[0].text;
-    }
-
-    // 1. musicCardShelfRenderer (Top Result Card)
-    if (node.musicCardShelfRenderer) {
-      const card = node.musicCardShelfRenderer;
-      const title = card?.title?.runs?.[0]?.text || '';
-      const subtitle = (card?.subtitle?.runs || [])
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .map((r: any) => r.text)
-        .join('');
-      const thumb = pickBestThumbnail(
-        card?.thumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails
-      );
-      const watchEp =
-        card?.onTap?.watchEndpoint ||
-        card?.title?.runs?.[0]?.navigationEndpoint?.watchEndpoint ||
-        card?.buttons?.[0]?.buttonRenderer?.command?.watchEndpoint;
-      const browseEp =
-        card?.onTap?.browseEndpoint ||
-        card?.title?.runs?.[0]?.navigationEndpoint?.browseEndpoint;
-
-      const videoId = watchEp?.videoId;
-      const browseId = browseEp?.browseId;
-      const { addToQueueEndpoint, playNextEndpoint, queuePlaylistId } =
-        extractQueueEndpoints(card?.menu?.menuRenderer?.items);
-      const playlistId = watchEp?.playlistId || queuePlaylistId;
-      const mvType =
-        watchEp?.watchEndpointMusicSupportedConfigs?.watchEndpointMusicConfig
-          ?.musicVideoType;
-
-      if (title) {
-        const dedupKey = videoId || browseId || `${title}-${subtitle}`;
-        if (!seenKeys.has(dedupKey)) {
-          seenKeys.add(dedupKey);
-          const category =
-            mvType === 'MUSIC_VIDEO_TYPE_OMV' || mvType === 'MUSIC_VIDEO_TYPE_UGC'
-              ? 'Video'
-              : mvType === 'MUSIC_VIDEO_TYPE_ATV'
-              ? 'Song'
-              : classifySubtitle(subtitle, 'Top result', Boolean(videoId));
-
-          results.push({
-            id: `it-card-${idxCounter}`,
-            searchIndex: idxCounter++,
-            title,
-            subtitle: subtitle || 'Top Result',
-            category,
-            artworkUrl: upgradeGoogleImage(thumb) || thumb,
-            videoId,
-            playlistId,
-            browseId,
-            watchEndpoint: watchEp || undefined,
-            addToQueueEndpoint,
-            playNextEndpoint,
-          });
-        }
-      }
-    }
-
-    // 2. musicResponsiveListItemRenderer (Songs, Videos, Albums, Artists, Playlists)
-    if (node.musicResponsiveListItemRenderer) {
-      const item = node.musicResponsiveListItemRenderer;
-      const flexColumns = item?.flexColumns || [];
-
-      const runs0 =
-        flexColumns[0]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs || [];
-      const title = runs0[0]?.text || '';
-
-      // Concatenate remaining flex columns for Artist • Album • Duration
-      const subtitleParts: string[] = [];
-      for (let i = 1; i < flexColumns.length; i++) {
-        const runs =
-          flexColumns[i]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs || [];
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const colText = runs.map((r: any) => r.text).join('').trim();
-        if (colText) subtitleParts.push(colText);
-      }
-      const subtitle = subtitleParts.join(' • ');
-
-      const thumb = pickBestThumbnail(
-        item?.thumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails
-      );
-
-      const overlayWatch =
-        item?.overlay?.musicItemThumbnailOverlayRenderer?.content
-          ?.musicPlayButtonRenderer?.playNavigationEndpoint?.watchEndpoint ||
-        item?.overlay?.musicItemThumbnailOverlayRenderer?.content
-          ?.musicPlayButtonRenderer?.playNavigationEndpoint?.watchPlaylistEndpoint;
-
-      const directWatch =
-        runs0[0]?.navigationEndpoint?.watchEndpoint ||
-        item?.navigationEndpoint?.watchEndpoint ||
-        item?.doubleTapCommand?.watchEndpoint;
-
-      const browseEp =
-        runs0[0]?.navigationEndpoint?.browseEndpoint ||
-        item?.navigationEndpoint?.browseEndpoint;
-
-      const fullWatchEp = overlayWatch || directWatch;
-      const videoId = fullWatchEp?.videoId;
-      const browseId = browseEp?.browseId;
-      const { addToQueueEndpoint, playNextEndpoint, queuePlaylistId } =
-        extractQueueEndpoints(item?.menu?.menuRenderer?.items);
-      const playlistId = fullWatchEp?.playlistId || queuePlaylistId;
-      const mvType =
-        fullWatchEp?.watchEndpointMusicSupportedConfigs?.watchEndpointMusicConfig
-          ?.musicVideoType;
-
-      if (title) {
-        const dedupKey = videoId || browseId || `${title}-${subtitle}`;
-        if (!seenKeys.has(dedupKey)) {
-          seenKeys.add(dedupKey);
-          const category =
-            mvType === 'MUSIC_VIDEO_TYPE_OMV' || mvType === 'MUSIC_VIDEO_TYPE_UGC'
-              ? 'Video'
-              : mvType === 'MUSIC_VIDEO_TYPE_ATV'
-              ? 'Song'
-              : classifySubtitle(subtitle, nextShelfTitle, Boolean(videoId));
-
-          results.push({
-            id: `it-item-${idxCounter}-${videoId || idxCounter}`,
-            searchIndex: idxCounter++,
-            title,
-            subtitle: subtitle || nextShelfTitle || 'YouTube Music',
-            category,
-            artworkUrl: upgradeGoogleImage(thumb) || thumb,
-            videoId,
-            playlistId,
-            browseId,
-            watchEndpoint: fullWatchEp || undefined,
-            addToQueueEndpoint,
-            playNextEndpoint,
-          });
-        }
-      }
-    }
-
-    for (const key of Object.keys(node)) {
-      walk(node[key], nextShelfTitle);
-    }
-  }
-
-  walk(root);
-  return results;
-}
-
-async function performNativeSearch(query: string): Promise<ParsedSearchResult[]> {
+async function performNativeSearch(query: string): Promise<RawBridgeSearchResult[]> {
   try {
-    const ytcfg = (window as unknown as {
-      ytcfg?: { get?: (key: string) => unknown };
-    }).ytcfg;
-    const apiKey = ytcfg?.get?.('INNERTUBE_API_KEY') as string | undefined;
-    const context = ytcfg?.get?.('INNERTUBE_CONTEXT') as Record<string, unknown> | undefined;
+    const { apiKey, context } = getInnerTubeConfig();
+    if (!apiKey || !context) return [];
 
-    if (apiKey && context) {
-      const url = `https://music.youtube.com/youtubei/v1/search?prettyPrint=false&key=${encodeURIComponent(
-        apiKey
-      )}`;
+    const url = `https://music.youtube.com/youtubei/v1/search?prettyPrint=false&key=${encodeURIComponent(
+      apiKey
+    )}`;
+    const postSearch = (params?: string) =>
+      fetch(url, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params ? { context, query, params } : { context, query }),
+      });
 
-      // Fetch General Search (Top Result + Songs + Videos), Videos filter, and Songs filter in parallel
-      const [generalRes, videosRes, songsRes] = await Promise.allSettled([
-        fetch(url, {
-          method: 'POST',
-          credentials: 'same-origin',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            context,
-            query,
-          }),
-        }),
-        fetch(url, {
-          method: 'POST',
-          credentials: 'same-origin',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            context,
-            query,
-            params: 'EgWKAQIQAWoKEAkQBRAKEAMQBA==', // Official YTM "Videos" filter
-          }),
-        }),
-        fetch(url, {
-          method: 'POST',
-          credentials: 'same-origin',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            context,
-            query,
-            params: 'EgWKAQIIAWoKEAkQBRAKEAMQBA==', // Official YTM "Songs" filter
-          }),
-        }),
+    // Query General (Top Results + shelves), Videos, Songs, Artists, and Albums in parallel
+    const [generalRes, videosRes, songsRes, artistsRes, albumsRes] =
+      await Promise.allSettled([
+        postSearch(),
+        postSearch('EgWKAQIQAWoKEAkQBRAKEAMQBA=='),
+        postSearch('EgWKAQIIAWoKEAkQBRAKEAMQBA=='),
+        postSearch('EgWKAQIgAWoKEAkQBRAKEAMQBA=='),
+        postSearch('EgWKAQIYAWoKEAkQBRAKEAMQBA=='),
       ]);
 
-      const merged: ParsedSearchResult[] = [];
-      const seen = new Set<string>();
+    const merged: RawBridgeSearchResult[] = [];
+    const seen = new Set<string>();
 
-      const appendParsed = (items: ParsedSearchResult[]) => {
-        for (const item of items) {
-          const key = item.videoId || item.browseId || `${item.title}-${item.subtitle}`;
-          if (!seen.has(key)) {
-            seen.add(key);
-            merged.push(item);
-          }
+    const appendParsed = (items: RawBridgeSearchResult[]) => {
+      for (const item of items) {
+        const key = `${item.category}:${
+          item.videoId || item.browseId || `${item.title}-${item.subtitle}`
+        }`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          merged.push(item);
         }
-      };
-
-      if (generalRes.status === 'fulfilled' && generalRes.value.ok) {
-        const generalJson = await generalRes.value.json();
-        appendParsed(extractRenderersRecursively(generalJson).slice(0, 12));
       }
+    };
 
-      if (videosRes.status === 'fulfilled' && videosRes.value.ok) {
-        const videosJson = await videosRes.value.json();
-        appendParsed(
-          extractRenderersRecursively(videosJson)
-            .slice(0, 8)
-            .map((v) => ({ ...v, category: 'Video' as const }))
-        );
-      }
+    if (generalRes.status === 'fulfilled' && generalRes.value.ok) {
+      const generalJson = await generalRes.value.json();
+      appendParsed(extractSearchRenderers(generalJson).slice(0, 40));
+    }
+    if (artistsRes.status === 'fulfilled' && artistsRes.value.ok) {
+      const artistsJson = await artistsRes.value.json();
+      appendParsed(
+        extractSearchRenderers(artistsJson)
+          .slice(0, 8)
+          .map((a) => ({ ...a, category: 'Artist' as const }))
+      );
+    }
+    if (songsRes.status === 'fulfilled' && songsRes.value.ok) {
+      const songsJson = await songsRes.value.json();
+      appendParsed(
+        extractSearchRenderers(songsJson)
+          .slice(0, 8)
+          .map((s) => ({ ...s, category: 'Song' as const }))
+      );
+    }
+    if (videosRes.status === 'fulfilled' && videosRes.value.ok) {
+      const videosJson = await videosRes.value.json();
+      appendParsed(
+        extractSearchRenderers(videosJson)
+          .slice(0, 6)
+          .map((v) => ({ ...v, category: 'Video' as const }))
+      );
+    }
+    if (albumsRes.status === 'fulfilled' && albumsRes.value.ok) {
+      const albumsJson = await albumsRes.value.json();
+      appendParsed(
+        extractSearchRenderers(albumsJson)
+          .slice(0, 6)
+          .map((al) => ({ ...al, category: 'Album' as const }))
+      );
+    }
 
-      if (songsRes.status === 'fulfilled' && songsRes.value.ok) {
-        const songsJson = await songsRes.value.json();
-        appendParsed(
-          extractRenderersRecursively(songsJson)
-            .slice(0, 8)
-            .map((s) => ({ ...s, category: 'Song' as const }))
-        );
-      }
-
-      if (merged.length > 0) {
-        return merged.slice(0, 28).map((item, idx) => ({
-          ...item,
-          searchIndex: idx,
-        }));
-      }
+    if (merged.length > 0) {
+      return merged.slice(0, 50).map((item, idx) => ({
+        ...item,
+        searchIndex: idx,
+      }));
     }
   } catch (err) {
     console.warn('[Aesthetic Music] InnerTube live search error:', err);
@@ -775,84 +523,207 @@ async function performNativeSearch(query: string): Promise<ParsedSearchResult[]>
   return [];
 }
 
-function playSearchResultItem(payload: Record<string, unknown>) {
-  const videoId = payload.videoId as string | undefined;
-  const playlistId = payload.playlistId as string | undefined;
-  const browseId = payload.browseId as string | undefined;
-  const rawWatchEndpoint = payload.watchEndpoint as Record<string, unknown> | undefined;
+async function fetchBrowseDetails(
+  browseId: string,
+  hintKind?: 'Artist' | 'Album' | 'Playlist'
+) {
+  if (!browseId) {
+    return { ok: false, error: 'Missing browseId' };
+  }
 
-  if (videoId || playlistId || rawWatchEndpoint) {
-    const watchEndpoint: Record<string, unknown> = rawWatchEndpoint
-      ? { ...rawWatchEndpoint }
-      : {};
-    if (videoId && !watchEndpoint.videoId) watchEndpoint.videoId = videoId;
-    if (!watchEndpoint.playlistId && (playlistId || videoId)) {
-      watchEndpoint.playlistId = playlistId || `RDAMVM${videoId}`;
+  const { apiKey, context } = getInnerTubeConfig();
+  if (!apiKey || !context) {
+    return { ok: false, error: 'InnerTube config unavailable' };
+  }
+
+  try {
+    const url = `https://music.youtube.com/youtubei/v1/browse?prettyPrint=false&key=${encodeURIComponent(
+      apiKey
+    )}`;
+    const res = await fetch(url, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ context, browseId }),
+    });
+    if (!res.ok) {
+      return { ok: false, error: `InnerTube browse HTTP ${res.status}` };
     }
 
-    // 1. Trigger via an existing ytmusic-play-button-renderer's Polymer handler
-    const anyPlayBtn = document.querySelector('ytmusic-play-button-renderer') as
-      | (HTMLElement & {
-          data?: Record<string, unknown>;
-          playNavigationEndpoint?: Record<string, unknown>;
-        })
-      | null;
+    const json = await res.json();
+    const parsed = parseBrowseDetails(json, browseId, hintKind);
+    if (!parsed) {
+      return { ok: false, error: 'Unable to parse browse details' };
+    }
 
-    if (anyPlayBtn) {
-      const originalData = anyPlayBtn.data;
-      const originalEndpoint = anyPlayBtn.playNavigationEndpoint;
+    // Hydrate fuller Top Songs list for Artists when YTM returns <= 8 songs inline
+    if (
+      parsed.details.kind === 'Artist' &&
+      parsed.moreTracksBrowseEndpoint?.browseId &&
+      parsed.details.tracks.length <= 8
+    ) {
       try {
-        const navEp = { watchEndpoint };
-        anyPlayBtn.data = { playNavigationEndpoint: navEp };
-        anyPlayBtn.playNavigationEndpoint = navEp;
-        anyPlayBtn.click();
-        setTimeout(() => {
-          if (originalData) anyPlayBtn.data = originalData;
-          if (originalEndpoint) anyPlayBtn.playNavigationEndpoint = originalEndpoint;
-        }, 400);
-        return;
+        const moreEp = parsed.moreTracksBrowseEndpoint;
+        const moreRes = await fetch(url, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            context,
+            browseId: moreEp.browseId,
+            ...(moreEp.params ? { params: moreEp.params } : {}),
+          }),
+        });
+        if (moreRes.ok) {
+          const moreJson = await moreRes.json();
+          const moreTracks = extractTracksFromBrowseShelf(
+            moreJson,
+            parsed.details.artworkUrl,
+            parsed.details.playlistId,
+            parsed.details.title
+          );
+          if (moreTracks.length > 0) {
+            const existingIds = new Set(
+              parsed.details.tracks.map((t) => t.videoId).filter(Boolean)
+            );
+            for (const track of moreTracks) {
+              if (track.videoId && !existingIds.has(track.videoId)) {
+                existingIds.add(track.videoId);
+                parsed.details.tracks.push({
+                  ...track,
+                  index: parsed.details.tracks.length,
+                });
+                if (parsed.details.tracks.length >= 25) break;
+              }
+            }
+          }
+        }
       } catch {
-        if (originalData) anyPlayBtn.data = originalData;
-        if (originalEndpoint) anyPlayBtn.playNavigationEndpoint = originalEndpoint;
+        // Keep initial Top Songs list cleanly if Show All hydration fails
       }
     }
 
-    // 2. Fallback: Dispatch yt-navigate on ytmusic-app
-    const ytApp = document.querySelector('ytmusic-app');
-    if (ytApp) {
-      ytApp.dispatchEvent(
-        new CustomEvent('yt-action', {
-          bubbles: true,
-          composed: true,
-          detail: {
-            actionName: 'yt-navigate',
-            args: [{ watchEndpoint }],
-          },
-        })
-      );
-    }
-
-    // 3. Direct #movie_player fallback
-    const moviePlayer = document.getElementById('movie_player') as unknown as {
-      loadVideoById?: (id: string) => void;
-    } | null;
-    if (videoId && moviePlayer?.loadVideoById) {
-      moviePlayer.loadVideoById(videoId);
-      return;
-    }
-  } else if (browseId) {
-    const ytApp = document.querySelector('ytmusic-app');
-    ytApp?.dispatchEvent(
-      new CustomEvent('yt-action', {
-        bubbles: true,
-        composed: true,
-        detail: {
-          actionName: 'yt-navigate',
-          args: [{ browseEndpoint: { browseId } }],
-        },
-      })
-    );
+    return { ok: true, details: parsed.details };
+  } catch (err) {
+    console.warn('[Aesthetic Music] Browse fetch error:', err);
+    return { ok: false, error: String(err) };
   }
+}
+
+function buildWatchEndpoint(
+  videoId?: string,
+  playlistId?: string,
+  rawWatchEndpoint?: Record<string, unknown>
+): Record<string, unknown> | null {
+  if (rawWatchEndpoint && Object.keys(rawWatchEndpoint).length > 0) {
+    // Wrap watchEndpoint/watchPlaylistEndpoint cleanly inside NavigationEndpoint envelope if unwrapped
+    if (
+      !rawWatchEndpoint.watchEndpoint &&
+      !rawWatchEndpoint.watchPlaylistEndpoint
+    ) {
+      if (rawWatchEndpoint.videoId) {
+        const ep: Record<string, unknown> = { ...rawWatchEndpoint };
+        if (!ep.playlistId) ep.playlistId = playlistId || `RDAMVM${ep.videoId}`;
+        return { watchEndpoint: ep };
+      }
+      if (rawWatchEndpoint.playlistId) {
+        return { watchPlaylistEndpoint: { ...rawWatchEndpoint } };
+      }
+    }
+    return { ...rawWatchEndpoint };
+  }
+
+  if (videoId) {
+    return {
+      watchEndpoint: {
+        videoId,
+        playlistId: playlistId || `RDAMVM${videoId}`,
+      },
+    };
+  }
+  if (playlistId) {
+    return {
+      watchPlaylistEndpoint: {
+        playlistId,
+      },
+    };
+  }
+  return null;
+}
+
+function playSearchResultItem(payload: Record<string, unknown>) {
+  const videoId = payload.videoId as string | undefined;
+  const playlistId = payload.playlistId as string | undefined;
+  const rawWatchEndpoint = payload.watchEndpoint as Record<string, unknown> | undefined;
+
+  const navEndpoint = buildWatchEndpoint(videoId, playlistId, rawWatchEndpoint);
+  if (navEndpoint) {
+    navigateWithEndpoint(navEndpoint, videoId);
+  }
+}
+
+function playBrowseEndpoint(payload: Record<string, unknown>): boolean {
+  const shuffle = Boolean(payload.shuffle);
+  const rawEndpoint = payload.endpoint as Record<string, unknown> | undefined;
+  const playlistId = payload.playlistId as string | undefined;
+  const tracks = Array.isArray(payload.tracks)
+    ? (payload.tracks as BrowseTrackItem[])
+    : [];
+
+  if (shuffle) {
+    if (rawEndpoint) {
+      return navigateWithEndpoint({ ...rawEndpoint });
+    }
+    if (playlistId && !playlistId.startsWith('RD')) {
+      return navigateWithEndpoint({
+        watchPlaylistEndpoint: {
+          playlistId,
+          params: 'wAEB8gECKAE%3D',
+        },
+      });
+    }
+    if (tracks.length > 0) {
+      const randomTrack = tracks[Math.floor(Math.random() * tracks.length)];
+      const ep = buildWatchEndpoint(
+        randomTrack.videoId,
+        randomTrack.playlistId,
+        randomTrack.watchEndpoint
+      );
+      if (ep) {
+        return navigateWithEndpoint(ep, randomTrack.videoId);
+      }
+    }
+    if (playlistId) {
+      return navigateWithEndpoint({
+        watchPlaylistEndpoint: {
+          playlistId,
+          params: 'wAEB8gECKAE%3D',
+        },
+      });
+    }
+    return false;
+  }
+
+  if (rawEndpoint) {
+    const ep = buildWatchEndpoint(undefined, playlistId, rawEndpoint);
+    if (ep) return navigateWithEndpoint(ep);
+  }
+
+  if (tracks.length > 0) {
+    const first = tracks[0];
+    const ep = buildWatchEndpoint(
+      first.videoId,
+      playlistId || first.playlistId,
+      first.watchEndpoint
+    );
+    if (ep) return navigateWithEndpoint(ep, first.videoId);
+  }
+
+  if (playlistId) {
+    return navigateWithEndpoint({ watchPlaylistEndpoint: { playlistId } });
+  }
+
+  return false;
 }
 
 interface ParsedLyricLine {
@@ -1695,6 +1566,23 @@ function removeQueueItemAt(idx: number) {
             if (detail.payload) {
               playSearchResultItem(detail.payload);
             }
+            break;
+          }
+
+          case 'FETCH_BROWSE_DETAILS': {
+            const browseId = String(detail.payload?.browseId || '').trim();
+            const rawKind = detail.payload?.kind;
+            const hintKind =
+              rawKind === 'Artist' || rawKind === 'Album' || rawKind === 'Playlist'
+                ? rawKind
+                : undefined;
+            responseData = await fetchBrowseDetails(browseId, hintKind);
+            break;
+          }
+
+          case 'PLAY_ENDPOINT': {
+            const ok = detail.payload ? playBrowseEndpoint(detail.payload) : false;
+            responseData = { ok };
             break;
           }
 
