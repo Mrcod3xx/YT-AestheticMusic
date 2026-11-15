@@ -8,9 +8,16 @@
  *    is never swallowed by YouTube Music's global shortcut manager.
  */
 
-import type { BrowseTrackItem } from '../shared/types';
+import type { BrowseTrackItem, LibraryHubSection } from '../shared/types';
+import {
+  buildInnerTubeRequestHeaders,
+  detectYtmSessionState,
+  normalizeBrowseIdForRequest,
+  YtmSessionState,
+} from '../shared/innertubeAuth';
 import {
   RawBridgeSearchResult,
+  extractLibraryHubItems,
   extractSearchRenderers,
   extractTracksFromBrowseShelf,
   parseBrowseDetails,
@@ -32,6 +39,7 @@ interface BridgeRequestDetail {
     | 'ADD_TO_QUEUE'
     | 'GET_LYRICS'
     | 'FETCH_BROWSE_DETAILS'
+    | 'FETCH_LIBRARY_HUB'
     | 'PLAY_ENDPOINT';
   requestId: string;
   payload?: Record<string, unknown>;
@@ -109,19 +117,79 @@ interface YtmQueueElement extends HTMLElement {
   };
 }
 
-function getInnerTubeConfig(): {
+interface InnerTubeRuntimeConfig {
   apiKey?: string;
   context?: Record<string, unknown>;
-} {
-  const ytcfg = (
-    window as unknown as {
-      ytcfg?: { get?: (key: string) => unknown };
-    }
-  ).ytcfg;
-  return {
-    apiKey: ytcfg?.get?.('INNERTUBE_API_KEY') as string | undefined,
-    context: ytcfg?.get?.('INNERTUBE_CONTEXT') as Record<string, unknown> | undefined,
+  clientName?: unknown;
+  clientVersion?: unknown;
+  visitorData?: unknown;
+  loggedIn?: unknown;
+  datasyncId?: unknown;
+  delegatedSessionId?: unknown;
+  sessionIndex?: unknown;
+  idToken?: unknown;
+}
+
+function getInnerTubeConfig(): InnerTubeRuntimeConfig {
+  const win = window as unknown as {
+    ytcfg?: { get?: (key: string) => unknown; data_?: Record<string, unknown> };
+    yt?: { config_?: Record<string, unknown> };
   };
+  const readKey = (key: string): unknown =>
+    win.ytcfg?.get?.(key) ?? win.ytcfg?.data_?.[key] ?? win.yt?.config_?.[key];
+
+  const context = readKey('INNERTUBE_CONTEXT') as Record<string, unknown> | undefined;
+  const ctxClient = context?.client as Record<string, unknown> | undefined;
+
+  return {
+    apiKey: readKey('INNERTUBE_API_KEY') as string | undefined,
+    context,
+    clientName: readKey('INNERTUBE_CLIENT_NAME') ?? ctxClient?.clientName ?? '67',
+    clientVersion: readKey('INNERTUBE_CLIENT_VERSION') ?? ctxClient?.clientVersion,
+    visitorData: readKey('VISITOR_DATA') ?? ctxClient?.visitorData,
+    loggedIn: readKey('LOGGED_IN'),
+    datasyncId: readKey('DATASYNC_ID'),
+    delegatedSessionId: readKey('DELEGATED_SESSION_ID'),
+    sessionIndex: readKey('SESSION_INDEX'),
+    idToken: readKey('ID_TOKEN'),
+  };
+}
+
+function getYtmSessionState(cfg: InnerTubeRuntimeConfig): YtmSessionState {
+  const hasNavAvatar = Boolean(
+    document.querySelector(
+      'ytmusic-nav-bar ytmusic-settings-button, ytmusic-nav-bar #avatar-btn, ytmusic-nav-bar img#img[src*="googleusercontent"], ytmusic-nav-bar button[aria-label*="Account"]'
+    )
+  );
+  const hasSignInLink = Boolean(
+    document.querySelector(
+      'ytmusic-nav-bar a.sign-in-link, ytmusic-nav-bar a[href*="ServiceLogin"]'
+    )
+  );
+  return detectYtmSessionState({
+    ytcfgLoggedIn: cfg.loggedIn,
+    datasyncId: cfg.datasyncId,
+    delegatedSessionId: cfg.delegatedSessionId,
+    sessionIndex: cfg.sessionIndex,
+    idToken: cfg.idToken,
+    cookieHeader: document.cookie || '',
+    hasNavAvatar,
+    hasSignInLink,
+  });
+}
+
+async function getInnerTubeAuthHeaders(
+  cfg: InnerTubeRuntimeConfig,
+  sessionState: YtmSessionState
+): Promise<Record<string, string>> {
+  return buildInnerTubeRequestHeaders({
+    origin: window.location.origin || 'https://music.youtube.com',
+    cookieHeader: document.cookie || '',
+    sessionState,
+    clientName: cfg.clientName,
+    clientVersion: cfg.clientVersion,
+    visitorData: cfg.visitorData,
+  });
 }
 
 function unwrapQueueRenderer(raw: RawQueueEntry | null | undefined): Record<string, unknown> {
@@ -434,18 +502,24 @@ function extractQueueItems() {
 
 async function performNativeSearch(query: string): Promise<RawBridgeSearchResult[]> {
   try {
-    const { apiKey, context } = getInnerTubeConfig();
-    if (!apiKey || !context) return [];
+    const cfg = getInnerTubeConfig();
+    if (!cfg.apiKey || !cfg.context) return [];
+    const session = getYtmSessionState(cfg);
+    const headers = await getInnerTubeAuthHeaders(cfg, session);
 
     const url = `https://music.youtube.com/youtubei/v1/search?prettyPrint=false&key=${encodeURIComponent(
-      apiKey
+      cfg.apiKey
     )}`;
     const postSearch = (params?: string) =>
       fetch(url, {
         method: 'POST',
-        credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(params ? { context, query, params } : { context, query }),
+        credentials: 'include',
+        headers,
+        body: JSON.stringify(
+          params
+            ? { context: cfg.context, query, params }
+            : { context: cfg.context, query }
+        ),
       });
 
     // Query General (Top Results + shelves), Videos, Songs, Artists, and Albums in parallel
@@ -523,35 +597,214 @@ async function performNativeSearch(query: string): Promise<RawBridgeSearchResult
   return [];
 }
 
-async function fetchBrowseDetails(
+const LIBRARY_HUB_BROWSE_IDS: Record<LibraryHubSection, string> = {
+  liked: 'FEmusic_liked_videos',
+  playlists: 'FEmusic_liked_playlists',
+  home: 'FEmusic_home',
+};
+
+async function postInnerTubeBrowse(
   browseId: string,
+  params?: string
+): Promise<
+  | { ok: true; json: unknown; session: YtmSessionState }
+  | { ok: false; error: string; status?: number; session: YtmSessionState }
+> {
+  const cfg = getInnerTubeConfig();
+  const session = getYtmSessionState(cfg);
+  if (!cfg.apiKey || !cfg.context) {
+    return { ok: false, error: 'InnerTube config unavailable', session };
+  }
+
+  const headers = await getInnerTubeAuthHeaders(cfg, session);
+  const url = `https://music.youtube.com/youtubei/v1/browse?prettyPrint=false&key=${encodeURIComponent(
+    cfg.apiKey
+  )}`;
+  const res = await fetch(url, {
+    method: 'POST',
+    credentials: 'include',
+    headers,
+    body: JSON.stringify({
+      context: cfg.context,
+      browseId,
+      ...(params ? { params } : {}),
+    }),
+  });
+  if (!res.ok) {
+    return {
+      ok: false,
+      status: res.status,
+      error: `InnerTube browse HTTP ${res.status}`,
+      session,
+    };
+  }
+
+  return { ok: true, json: await res.json(), session };
+}
+
+function finalizePlaylistResults(
+  items: RawBridgeSearchResult[]
+): RawBridgeSearchResult[] {
+  const seen = new Set<string>();
+  const out: RawBridgeSearchResult[] = [];
+  for (const item of items) {
+    if (item.browseId === 'FEmusic_liked_playlists') continue;
+    const synthesizedBrowseId =
+      item.browseId ||
+      (item.playlistId === 'LM'
+        ? 'FEmusic_liked_videos'
+        : item.playlistId
+        ? item.playlistId.startsWith('VL')
+          ? item.playlistId
+          : `VL${item.playlistId}`
+        : undefined);
+    const resolvedPlaylistId =
+      item.playlistId ||
+      (synthesizedBrowseId?.startsWith('VL')
+        ? synthesizedBrowseId.slice(2)
+        : synthesizedBrowseId?.startsWith('PL')
+        ? synthesizedBrowseId
+        : synthesizedBrowseId === 'FEmusic_liked_videos'
+        ? 'LM'
+        : undefined);
+    if (!synthesizedBrowseId && !resolvedPlaylistId && !item.videoId) continue;
+
+    const normalizedItem: RawBridgeSearchResult = {
+      ...item,
+      browseId: synthesizedBrowseId,
+      playlistId: resolvedPlaylistId,
+      category: 'Playlist',
+    };
+    const key = normalizedItem.browseId || normalizedItem.playlistId || normalizedItem.title;
+    if (!seen.has(key)) {
+      seen.add(key);
+      out.push(normalizedItem);
+    }
+  }
+  return out;
+}
+
+async function fetchLibraryHub(section: LibraryHubSection) {
+  const browseId = LIBRARY_HUB_BROWSE_IDS[section];
+  const cfg = getInnerTubeConfig();
+  const initialSession = getYtmSessionState(cfg);
+  if (!browseId) {
+    return {
+      ok: false,
+      loggedIn: initialSession.loggedIn,
+      results: [],
+      error: 'Invalid library section',
+    };
+  }
+
+  try {
+    const browseRes = await postInnerTubeBrowse(browseId);
+    if (!browseRes.ok) {
+      return {
+        ok: false,
+        loggedIn: browseRes.session.loggedIn,
+        hasAuthCookies: browseRes.session.hasAuthCookies,
+        section,
+        results: [],
+        error: browseRes.error,
+      };
+    }
+
+    let items = extractLibraryHubItems(browseRes.json, section, 60);
+
+    // Fallback for Liked Songs if wrapped in a full playlist details structure
+    if (section === 'liked' && items.length === 0) {
+      const parsedLiked = parseBrowseDetails(
+        browseRes.json,
+        'FEmusic_liked_videos',
+        'Playlist'
+      );
+      if (parsedLiked?.details.tracks.length) {
+        items = parsedLiked.details.tracks.map((track, idx) => ({
+          id: `lib-liked-fallback-${idx}-${track.videoId || idx}`,
+          searchIndex: idx,
+          title: track.title,
+          subtitle: track.artist || track.subtitle || 'Liked Music',
+          category: 'Song' as const,
+          artworkUrl: track.artworkUrl,
+          videoId: track.videoId,
+          playlistId: track.playlistId || 'LM',
+          shelfTitle: 'Liked Songs',
+          watchEndpoint: track.watchEndpoint,
+          addToQueueEndpoint: track.addToQueueEndpoint,
+          playNextEndpoint: track.playNextEndpoint,
+        }));
+      }
+    }
+
+    // Fallback for Playlists to FEmusic_library_landing when FEmusic_liked_playlists yields empty
+    if (section === 'playlists') {
+      items = finalizePlaylistResults(
+        items.filter(
+          (it) =>
+            it.category === 'Playlist' ||
+            Boolean(it.browseId?.startsWith('VL')) ||
+            Boolean(it.browseId?.startsWith('PL')) ||
+            it.browseId === 'FEmusic_liked_videos'
+        )
+      );
+      if (items.length === 0) {
+        const landingRes = await postInnerTubeBrowse('FEmusic_library_landing');
+        if (landingRes.ok) {
+          const landingItems = extractLibraryHubItems(landingRes.json, 'playlists', 60);
+          items = finalizePlaylistResults(
+            landingItems.filter(
+              (it) =>
+                it.category === 'Playlist' ||
+                Boolean(it.browseId?.startsWith('VL')) ||
+                Boolean(it.browseId?.startsWith('PL')) ||
+                it.browseId === 'FEmusic_liked_videos'
+            )
+          );
+        }
+      }
+    }
+
+    const results = items.map((item, idx) => ({
+      ...item,
+      searchIndex: idx,
+    }));
+    return {
+      ok: true,
+      loggedIn: browseRes.session.loggedIn,
+      hasAuthCookies: browseRes.session.hasAuthCookies,
+      section,
+      results,
+    };
+  } catch (err) {
+    console.warn('[Aesthetic Music] Library hub fetch error:', err);
+    return {
+      ok: false,
+      loggedIn: initialSession.loggedIn,
+      hasAuthCookies: initialSession.hasAuthCookies,
+      section,
+      results: [],
+      error: String(err),
+    };
+  }
+}
+
+async function fetchBrowseDetails(
+  rawBrowseId: string,
   hintKind?: 'Artist' | 'Album' | 'Playlist'
 ) {
+  const browseId = normalizeBrowseIdForRequest(rawBrowseId, hintKind);
   if (!browseId) {
     return { ok: false, error: 'Missing browseId' };
   }
 
-  const { apiKey, context } = getInnerTubeConfig();
-  if (!apiKey || !context) {
-    return { ok: false, error: 'InnerTube config unavailable' };
-  }
-
   try {
-    const url = `https://music.youtube.com/youtubei/v1/browse?prettyPrint=false&key=${encodeURIComponent(
-      apiKey
-    )}`;
-    const res = await fetch(url, {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ context, browseId }),
-    });
-    if (!res.ok) {
-      return { ok: false, error: `InnerTube browse HTTP ${res.status}` };
+    const browseRes = await postInnerTubeBrowse(browseId);
+    if (!browseRes.ok) {
+      return browseRes;
     }
 
-    const json = await res.json();
-    const parsed = parseBrowseDetails(json, browseId, hintKind);
+    const parsed = parseBrowseDetails(browseRes.json, browseId, hintKind);
     if (!parsed) {
       return { ok: false, error: 'Unable to parse browse details' };
     }
@@ -564,20 +817,13 @@ async function fetchBrowseDetails(
     ) {
       try {
         const moreEp = parsed.moreTracksBrowseEndpoint;
-        const moreRes = await fetch(url, {
-          method: 'POST',
-          credentials: 'same-origin',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            context,
-            browseId: moreEp.browseId,
-            ...(moreEp.params ? { params: moreEp.params } : {}),
-          }),
-        });
-        if (moreRes.ok) {
-          const moreJson = await moreRes.json();
+        const moreBrowseRes = await postInnerTubeBrowse(
+          moreEp.browseId,
+          moreEp.params
+        );
+        if (moreBrowseRes.ok) {
           const moreTracks = extractTracksFromBrowseShelf(
-            moreJson,
+            moreBrowseRes.json,
             parsed.details.artworkUrl,
             parsed.details.playlistId,
             parsed.details.title
@@ -1577,6 +1823,18 @@ function removeQueueItemAt(idx: number) {
                 ? rawKind
                 : undefined;
             responseData = await fetchBrowseDetails(browseId, hintKind);
+            break;
+          }
+
+          case 'FETCH_LIBRARY_HUB': {
+            const rawSection = detail.payload?.section;
+            const section: LibraryHubSection =
+              rawSection === 'liked' ||
+              rawSection === 'playlists' ||
+              rawSection === 'home'
+                ? rawSection
+                : 'home';
+            responseData = await fetchLibraryHub(section);
             break;
           }
 

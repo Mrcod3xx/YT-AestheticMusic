@@ -11,24 +11,30 @@ import {
   Upload,
   Trash2,
   CheckCircle2,
+  Download,
   Image as ImageIcon,
 } from 'lucide-react';
 import {
   AestheticSettings,
+  AmbientParticles,
   BackgroundMode,
   LyricsMode,
   PlayerPosition,
+  StageStyle,
   ThemePreset,
 } from '../shared/types';
 import { DEFAULT_SETTINGS } from '../shared/defaultSettings';
 import { EXTENSION_VERSION } from '../shared/version';
 import {
   ACCENT_SWATCHES,
+  ALL_THEME_ORDER,
   THEME_DEFINITIONS,
 } from '../shared/themeTokens';
 import {
   applyThemePreset,
+  createSettingsExportPayload,
   getSettings,
+  importSettings,
   resetSettings,
   saveSettings,
   subscribeToSettings,
@@ -96,8 +102,10 @@ const RangeRow: React.FC<RangeRowProps> = ({
 export const OptionsApp: React.FC = () => {
   const [settings, setSettings] = useState<AestheticSettings>(DEFAULT_SETTINGS);
   const [wallpaperStatus, setWallpaperStatus] = useState<string>('');
+  const [backupStatus, setBackupStatus] = useState<{ text: string; isError?: boolean } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const importInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     getSettings().then(setSettings);
@@ -125,7 +133,57 @@ export const OptionsApp: React.FC = () => {
     const defaults = await resetSettings();
     setSettings(defaults);
     setWallpaperStatus('');
+    setBackupStatus(null);
     await broadcastToYTM({ type: 'RESET_SETTINGS' });
+  };
+
+  const handleExportSettings = () => {
+    try {
+      const payload = createSettingsExportPayload(settings);
+      const blob = new Blob([JSON.stringify(payload, null, 2)], {
+        type: 'application/json',
+      });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `aesthetic-music-settings-${new Date()
+        .toISOString()
+        .slice(0, 10)}.json`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(url);
+      setBackupStatus({
+        text: 'Settings exported to JSON (local custom wallpaper files stay on this device).',
+      });
+    } catch (err) {
+      setBackupStatus({
+        text: err instanceof Error ? err.message : 'Failed to export settings.',
+        isError: true,
+      });
+    }
+  };
+
+  const handleImportSettingsFile = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      const rawText = await file.text();
+      const imported = await importSettings(rawText);
+      setSettings(imported);
+      await broadcastToYTM({ type: 'SETTINGS_UPDATED', settings: imported });
+      setBackupStatus({
+        text: `Imported settings from "${file.name}".`,
+      });
+    } catch (err) {
+      setBackupStatus({
+        text: err instanceof Error ? err.message : 'Failed to import settings.',
+        isError: true,
+      });
+    }
   };
 
   const handleWallpaperFile = async (file: File) => {
@@ -164,7 +222,7 @@ export const OptionsApp: React.FC = () => {
     setWallpaperStatus('Custom wallpaper cleared.');
   };
 
-  const themeOrder: ThemePreset[] = ['night-city', 'minimal-dark', 'cozy-room', 'custom'];
+  const themeOrder = ALL_THEME_ORDER;
 
   return (
     <div className="min-h-screen w-full bg-[#0b0b0e] text-zinc-100 py-10 px-6 flex justify-center">
@@ -190,7 +248,32 @@ export const OptionsApp: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <input
+              ref={importInputRef}
+              type="file"
+              accept="application/json,.json"
+              className="hidden"
+              onChange={(e) => void handleImportSettingsFile(e)}
+            />
+            <button
+              type="button"
+              onClick={handleExportSettings}
+              className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 text-[13px] font-medium text-zinc-300 transition cursor-pointer"
+              title="Export studio settings as JSON"
+            >
+              <Download className="w-4 h-4" />
+              <span>Export JSON</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => importInputRef.current?.click()}
+              className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 text-[13px] font-medium text-zinc-300 transition cursor-pointer"
+              title="Import studio settings from JSON"
+            >
+              <Upload className="w-4 h-4" />
+              <span>Import JSON</span>
+            </button>
             <button
               onClick={handleReset}
               className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 text-[13px] font-medium text-zinc-300 transition cursor-pointer"
@@ -213,6 +296,25 @@ export const OptionsApp: React.FC = () => {
           </div>
         </header>
 
+        {backupStatus && (
+          <div
+            className={`px-4 py-3 rounded-xl border text-xs flex items-center justify-between gap-3 ${
+              backupStatus.isError
+                ? 'bg-red-500/10 border-red-500/25 text-red-200'
+                : 'bg-emerald-500/10 border-emerald-500/25 text-emerald-200'
+            }`}
+          >
+            <span>{backupStatus.text}</span>
+            <button
+              type="button"
+              onClick={() => setBackupStatus(null)}
+              className="text-current/70 hover:text-current text-[11px] font-medium cursor-pointer"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+
         {/* Grid Sections */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Theme Presets & Panels */}
@@ -232,6 +334,8 @@ export const OptionsApp: React.FC = () => {
                     type="button"
                     onClick={() => selectTheme(id)}
                     className={`p-3 rounded-xl border text-left transition cursor-pointer ${
+                      id === 'custom' ? 'col-span-2' : ''
+                    } ${
                       active
                         ? 'bg-[#C28356]/15 border-[#C28356] text-white'
                         : 'bg-white/[0.02] border-white/10 text-zinc-300 hover:bg-white/[0.05]'
@@ -276,6 +380,20 @@ export const OptionsApp: React.FC = () => {
                 checked={settings.showSearchBar}
                 onChange={(v) => update({ showSearchBar: v })}
               />
+              <div className="flex items-center justify-between gap-4 pt-1">
+                <span className="text-sm text-zinc-200">Center Stage Style</span>
+                <select
+                  value={settings.stageStyle}
+                  onChange={(e) =>
+                    update({ stageStyle: e.target.value as StageStyle })
+                  }
+                  className="bg-zinc-900 border border-white/10 rounded-xl px-3 py-1.5 text-xs text-zinc-100 outline-none focus:border-[#C28356]"
+                >
+                  <option value="carousel">3D Coverflow Carousel</option>
+                  <option value="vinyl">Spinning Vinyl Showcase</option>
+                  <option value="minimal">Minimal Center Card</option>
+                </select>
+              </div>
             </div>
           </section>
 
@@ -521,6 +639,20 @@ export const OptionsApp: React.FC = () => {
                 onChange={(v) => update({ backgroundBrightness: v })}
               />
               <div className="flex justify-between items-center text-xs pt-1">
+                <span className="text-zinc-400">Ambient Particles</span>
+                <select
+                  value={settings.ambientParticles}
+                  onChange={(e) =>
+                    update({ ambientParticles: e.target.value as AmbientParticles })
+                  }
+                  className="bg-zinc-900 border border-white/10 rounded-xl px-3 py-1.5 text-xs text-zinc-100 outline-none focus:border-[#C28356]"
+                >
+                  <option value="none">Off</option>
+                  <option value="dust">Warm Dust</option>
+                  <option value="bokeh">Soft Bokeh</option>
+                </select>
+              </div>
+              <div className="flex justify-between items-center text-xs pt-1">
                 <span className="text-zinc-400">Vignette & Film Grain</span>
                 <div className="flex items-center gap-4">
                   <label className="flex items-center gap-1.5 text-zinc-300 cursor-pointer">
@@ -654,6 +786,11 @@ export const OptionsApp: React.FC = () => {
                   label="Dim Background When Lyrics Open"
                   checked={settings.lyricsDimBackground}
                   onChange={(v) => update({ lyricsDimBackground: v })}
+                />
+                <ToggleRow
+                  label="Show Mini 1-Line Lyric Subtitle When Closed"
+                  checked={settings.showMiniLyricLine}
+                  onChange={(v) => update({ showMiniLyricLine: v })}
                 />
               </div>
             </section>

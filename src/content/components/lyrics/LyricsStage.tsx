@@ -1,12 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ChevronUp, Loader2, RefreshCw } from 'lucide-react';
 import { LyricsData, LyricsMode } from '../../../shared/types';
+import { findActiveSyncedLineIndex } from '../../../shared/lyricsParser';
 
 interface LyricsStageProps {
   open: boolean;
   mode: LyricsMode;
   lyrics: LyricsData;
   currentTimeMs: number;
+  timingOffsetMs?: number;
   isPlaying: boolean;
   isVideoActive: boolean;
   carouselVisible: boolean;
@@ -217,6 +219,7 @@ export const LyricsStage: React.FC<LyricsStageProps> = ({
   mode,
   lyrics,
   currentTimeMs,
+  timingOffsetMs = 0,
   isPlaying,
   isVideoActive,
   carouselVisible,
@@ -238,6 +241,10 @@ export const LyricsStage: React.FC<LyricsStageProps> = ({
   const [pausedFollow, setPausedFollow] = useState(false);
   const [spotlightIdx, setSpotlightIdx] = useState(0);
   const [liveTimeMs, setLiveTimeMs] = useState(currentTimeMs);
+
+  useEffect(() => {
+    manualScrollUntilRef.current = 0;
+  }, [timingOffsetMs]);
 
   useEffect(() => {
     return () => {
@@ -286,15 +293,8 @@ export const LyricsStage: React.FC<LyricsStageProps> = ({
 
   const syncedActiveIdx = useMemo(() => {
     if (!lyrics.isSynced || lyrics.lines.length === 0) return -1;
-    let lastStarted = -1;
-    for (let i = 0; i < lyrics.lines.length; i++) {
-      const start = lyrics.lines[i].startTimeMs;
-      if (typeof start === 'number' && liveTimeMs >= start) {
-        lastStarted = i;
-      }
-    }
-    return lastStarted;
-  }, [lyrics.isSynced, lyrics.lines, liveTimeMs]);
+    return findActiveSyncedLineIndex(lyrics.lines, liveTimeMs, timingOffsetMs);
+  }, [lyrics.isSynced, lyrics.lines, liveTimeMs, timingOffsetMs]);
 
   const scrollTargetIndex = lyrics.isSynced ? syncedActiveIdx : spotlightIdx;
 
@@ -346,7 +346,7 @@ export const LyricsStage: React.FC<LyricsStageProps> = ({
   const handleSelectLine = (idx: number, startTimeMs?: number) => {
     if (lyrics.isSynced && typeof startTimeMs === 'number') {
       handleResumeSync();
-      onSeekSeconds(startTimeMs / 1000);
+      onSeekSeconds(Math.max(0, (startTimeMs + timingOffsetMs) / 1000));
     } else if (!lyrics.isSynced) {
       setSpotlightIdx(idx);
     }

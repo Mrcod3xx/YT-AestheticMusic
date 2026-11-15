@@ -1,6 +1,19 @@
 export type BackgroundMode = 'auto' | 'video' | 'ambient' | 'custom' | 'off';
 
-export type ThemePreset = 'night-city' | 'minimal-dark' | 'cozy-room' | 'custom';
+export type ThemePreset =
+  | 'night-city'
+  | 'minimal-dark'
+  | 'cozy-room'
+  | 'velvet-noir'
+  | 'midnight-ocean'
+  | 'sakura-haze'
+  | 'custom';
+
+export type StageStyle = 'carousel' | 'vinyl' | 'minimal';
+
+export type AmbientParticles = 'none' | 'dust' | 'bokeh';
+
+export type LibraryHubSection = 'liked' | 'playlists' | 'home';
 
 export type LyricsMode = 'focus' | 'compact' | 'full';
 
@@ -60,6 +73,7 @@ export interface AestheticSettings {
   clock24Hour: boolean;
   clockColor: string;
   showCarousel: boolean;
+  stageStyle: StageStyle;
   showSidebar: boolean;
   showSearchBar: boolean;
   playerPosition: PlayerPosition;
@@ -76,6 +90,7 @@ export interface AestheticSettings {
   animationSpeed: number; // 0.2 to 2.0
   vignette: boolean;
   filmGrain: boolean;
+  ambientParticles: AmbientParticles;
   customBackgroundType: 'none' | 'image' | 'video';
   customBackgroundName: string;
   customWallpaperVersion: number;
@@ -94,6 +109,7 @@ export interface AestheticSettings {
   lyricsFontSize: 'small' | 'medium' | 'large';
   lyricsHighlightActive: boolean;
   lyricsDimBackground: boolean;
+  showMiniLyricLine: boolean;
 
   // Performance
   reducedMotion: boolean;

@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  clampLyricsTimingOffsetMs,
   cleanArtistName,
   cleanTrackTitle,
+  findActiveSyncedLineIndex,
+  formatLyricsForCopy,
+  formatLyricsOffsetLabel,
   isLikelyAlbumName,
   parseLrcTimestampedLyrics,
   pickBestLrcCandidate,
@@ -93,5 +97,33 @@ describe('lyricsParser helpers', () => {
       244
     );
     expect(rejected).toBeNull();
+  });
+
+  it('clamps synced lyrics timing offsets, shifts active line cleanly, and formats copy text', () => {
+    expect(clampLyricsTimingOffsetMs(-25_000)).toBe(-10_000);
+    expect(clampLyricsTimingOffsetMs(25_000)).toBe(10_000);
+    expect(clampLyricsTimingOffsetMs(Number.NaN)).toBe(0);
+    expect(formatLyricsOffsetLabel(0)).toBe('0.0s');
+    expect(formatLyricsOffsetLabel(500)).toBe('+0.5s');
+    expect(formatLyricsOffsetLabel(-1500)).toBe('-1.5s');
+
+    const lines = [
+      { text: 'Intro beat', startTimeMs: 2000 },
+      { text: 'First verse line', startTimeMs: 5000 },
+      { text: 'Second verse line', startTimeMs: 10000 },
+    ];
+
+    expect(findActiveSyncedLineIndex(lines, 5500, 0)).toBe(1);
+    expect(findActiveSyncedLineIndex(lines, 5500, 1500)).toBe(0);
+    expect(findActiveSyncedLineIndex(lines, 9000, -1000)).toBe(2);
+    expect(findActiveSyncedLineIndex(lines, 1000, 0)).toBe(-1);
+
+    expect(
+      formatLyricsForCopy([
+        { text: 'Line one', startTimeMs: 1000 },
+        { text: '   ' },
+        { text: 'Line two', startTimeMs: 2000 },
+      ])
+    ).toBe('Line one\n\nLine two');
   });
 });

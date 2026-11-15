@@ -65,6 +65,7 @@ export const FloatingPlayerBar: React.FC<FloatingPlayerBarProps> = ({
 }) => {
   const [showVolumePopover, setShowVolumePopover] = useState(false);
   const [scrubTime, setScrubTime] = useState<number | null>(null);
+  const [seekHover, setSeekHover] = useState<{ sec: number; percent: number } | null>(null);
   const seekBarRef = useRef<HTMLDivElement | null>(null);
 
   const displayedTime = scrubTime !== null ? scrubTime : track.currentTime;
@@ -73,31 +74,57 @@ export const FloatingPlayerBar: React.FC<FloatingPlayerBarProps> = ({
       ? Math.min(100, Math.max(0, (displayedTime / track.duration) * 100))
       : 0;
 
-  const calculateSeekSeconds = (clientX: number): number => {
-    if (!seekBarRef.current || track.duration <= 0) return 0;
+  const computeSeekPosition = (clientX: number): { sec: number; percent: number } => {
+    if (!seekBarRef.current || track.duration <= 0) return { sec: 0, percent: 0 };
     const rect = seekBarRef.current.getBoundingClientRect();
     const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
-    return ratio * track.duration;
+    return { sec: ratio * track.duration, percent: ratio * 100 };
   };
 
   const handleSeekPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (track.duration <= 0) return;
     e.currentTarget.setPointerCapture(e.pointerId);
-    const nextSec = calculateSeekSeconds(e.clientX);
-    setScrubTime(nextSec);
+    const pos = computeSeekPosition(e.clientX);
+    setScrubTime(pos.sec);
+    setSeekHover(pos);
   };
 
   const handleSeekPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (scrubTime === null) return;
-    setScrubTime(calculateSeekSeconds(e.clientX));
+    if (track.duration <= 0) return;
+    const pos = computeSeekPosition(e.clientX);
+    setSeekHover(pos);
+    if (scrubTime !== null) {
+      setScrubTime(pos.sec);
+    }
   };
 
   const handleSeekPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
     if (scrubTime === null) return;
-    const finalSec = calculateSeekSeconds(e.clientX);
+    const finalPos = computeSeekPosition(e.clientX);
     setScrubTime(null);
-    onSeek(finalSec);
+    onSeek(finalPos.sec);
   };
+
+  const handleSeekPointerLeave = () => {
+    if (scrubTime === null) {
+      setSeekHover(null);
+    }
+  };
+
+  const handleVolumeWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    if (!settings.showVolumeControl) return;
+    e.preventDefault();
+    const baseVolume = track.isMuted ? 0 : track.volume;
+    const delta = e.deltaY < 0 ? 4 : -4;
+    const nextVolume = Math.min(100, Math.max(0, Math.round(baseVolume + delta)));
+    onVolumeChange(nextVolume);
+  };
+
+  const previewSec = scrubTime !== null ? scrubTime : seekHover?.sec ?? null;
+  const previewPercent =
+    scrubTime !== null
+      ? progressPercent
+      : seekHover?.percent ?? null;
 
   const glassAlpha = Math.min(0.92, Math.max(0.35, settings.playerGlassOpacity / 100));
   const barSizeClass =
@@ -229,15 +256,26 @@ export const FloatingPlayerBar: React.FC<FloatingPlayerBarProps> = ({
           </div>
         </div>
 
-        {/* Draggable & Clickable Seek Bar with Expanded Pointer Hit Area */}
+        {/* Draggable & Clickable Seek Bar with Expanded Pointer Hit Area & Hover Preview */}
         <div
           ref={seekBarRef}
           onPointerDown={handleSeekPointerDown}
           onPointerMove={handleSeekPointerMove}
           onPointerUp={handleSeekPointerUp}
+          onPointerLeave={handleSeekPointerLeave}
           className="w-full py-1.5 -my-1.5 cursor-pointer group/seek relative"
           title="Click or drag to seek"
         >
+          {previewSec !== null && previewPercent !== null && track.duration > 0 && (
+            <div
+              className="pointer-events-none absolute bottom-full mb-1.5 -translate-x-1/2 px-2 py-0.5 rounded-md text-[10.5px] font-mono text-white whitespace-nowrap shadow-lg border border-white/15 bg-black/90"
+              style={{
+                left: `${Math.min(94, Math.max(6, previewPercent))}%`,
+              }}
+            >
+              {formatSeconds(previewSec)}
+            </div>
+          )}
           <div className="w-full h-[5px] group-hover/seek:h-[8px] bg-white/20 rounded-full overflow-hidden transition-all relative">
             <div
               className="h-full bg-white rounded-full transition-[width] duration-75"
@@ -291,6 +329,7 @@ export const FloatingPlayerBar: React.FC<FloatingPlayerBarProps> = ({
 
         {/* Studio Visual Controls (🎚️) */}
         <button
+          data-aesthetic-settings-trigger="true"
           onClick={onToggleSettingsPopover}
           title="Aesthetic Studio Controls"
           className={`w-10 h-10 rounded-full flex items-center justify-center transition cursor-pointer ${
@@ -311,16 +350,21 @@ export const FloatingPlayerBar: React.FC<FloatingPlayerBarProps> = ({
           <Moon className="w-5 h-5" />
         </button>
 
-        {/* Volume Button + Popover Slider */}
+        {/* Volume Button + Popover Slider (Hover + Wheel Scroll) */}
         {settings.showVolumeControl && (
           <div
             className="relative flex items-center"
             onMouseEnter={() => setShowVolumePopover(true)}
             onMouseLeave={() => setShowVolumePopover(false)}
+            onWheel={handleVolumeWheel}
           >
             <button
               onClick={onToggleMute}
-              title={track.isMuted ? 'Unmute' : `Volume: ${Math.round(track.volume)}%`}
+              title={
+                track.isMuted
+                  ? 'Unmute (M) — Scroll to adjust'
+                  : `Volume: ${Math.round(track.volume)}% (Scroll to adjust)`
+              }
               className="w-10 h-10 rounded-full flex items-center justify-center text-zinc-300 hover:text-white hover:bg-white/10 transition cursor-pointer"
             >
               {track.isMuted || track.volume === 0 ? (
@@ -331,26 +375,28 @@ export const FloatingPlayerBar: React.FC<FloatingPlayerBarProps> = ({
             </button>
 
             {showVolumePopover && (
-              <div
-                className="absolute bottom-12 right-0 px-4 py-3 rounded-xl flex items-center gap-3 z-50"
-                style={{
-                  background: 'rgba(18, 19, 25, 0.94)',
-                  backdropFilter: 'blur(20px)',
-                  border: '1px solid rgba(255, 255, 255, 0.16)',
-                  boxShadow: '0 12px 30px rgba(0, 0, 0, 0.65)',
-                }}
-              >
-                <input
-                  type="range"
-                  min={0}
-                  max={100}
-                  value={track.isMuted ? 0 : track.volume}
-                  onChange={(e) => onVolumeChange(Number(e.target.value))}
-                  className="w-32 h-2 bg-zinc-700 rounded-lg cursor-pointer accent-white"
-                />
-                <span className="text-xs font-mono text-zinc-300 w-9 text-right">
-                  {Math.round(track.isMuted ? 0 : track.volume)}%
-                </span>
+              <div className="absolute bottom-full right-0 pb-2 z-50">
+                <div
+                  className="px-4 py-3 rounded-xl flex items-center gap-3"
+                  style={{
+                    background: 'rgba(18, 19, 25, 0.94)',
+                    backdropFilter: 'blur(20px)',
+                    border: '1px solid rgba(255, 255, 255, 0.16)',
+                    boxShadow: '0 12px 30px rgba(0, 0, 0, 0.65)',
+                  }}
+                >
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    value={track.isMuted ? 0 : track.volume}
+                    onChange={(e) => onVolumeChange(Number(e.target.value))}
+                    className="w-32 h-2 bg-zinc-700 rounded-lg cursor-pointer accent-white"
+                  />
+                  <span className="text-xs font-mono text-zinc-300 w-9 text-right">
+                    {Math.round(track.isMuted ? 0 : track.volume)}%
+                  </span>
+                </div>
               </div>
             )}
           </div>

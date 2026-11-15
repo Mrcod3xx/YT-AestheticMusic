@@ -5,6 +5,7 @@ import {
   BrowseDetailsData,
   BrowseTarget,
   BrowseTrackItem,
+  LibraryHubSection,
   LyricsData,
   LyricsMode,
   QueueTrackItem,
@@ -16,17 +17,31 @@ import {
   resetSettings,
   saveSettings,
 } from '../../shared/storage';
-import { getThemeTokens } from '../../shared/themeTokens';
+import {
+  getThemeTokens,
+  STUDIO_THEME_ORDER,
+  THEME_DEFINITIONS,
+} from '../../shared/themeTokens';
+import {
+  clampLyricsTimingOffsetMs,
+  findActiveSyncedLineIndex,
+} from '../../shared/lyricsParser';
+import {
+  resolveAestheticShortcut,
+  resolveEscapeTarget,
+} from '../../shared/keyboardShortcuts';
 import { BackgroundEngine } from './background/BackgroundEngine';
 import { DigitalClock } from './clock/DigitalClock';
 import { ContinuePlayingSidebar } from './sidebar/ContinuePlayingSidebar';
 import { AlbumCarousel3D } from './carousel/AlbumCarousel3D';
 import { LyricsStage } from './lyrics/LyricsStage';
 import { SearchBarOverlay, SearchResultItem } from './search/SearchBarOverlay';
+import type { LibraryHubResponse } from '../adapters/searchAdapter';
 import { BrowseDetailsModal } from './search/BrowseDetailsModal';
 import { FloatingQuickActions } from './player/FloatingQuickActions';
 import { FloatingPlayerBar } from './player/FloatingPlayerBar';
 import { InAppSettingsPopover } from './settings/InAppSettingsPopover';
+import { ShortcutsModal } from './settings/ShortcutsModal';
 import { SAMPLE_ACTIVE_TRACK, SAMPLE_QUEUE_ITEMS } from '../data/sampleData';
 
 export interface AestheticAppActions {
@@ -45,6 +60,10 @@ export interface AestheticAppActions {
   onRefreshQueue: () => void;
   onRetryLyrics: () => void;
   onSearch: (query: string) => Promise<SearchResultItem[]>;
+  onFetchLibraryHub?: (
+    section: LibraryHubSection
+  ) => Promise<LibraryHubResponse>;
+  onStartSongRadio?: (videoId: string) => Promise<boolean> | void;
   onFetchBrowseDetails: (
     browseId: string,
     kind?: 'Artist' | 'Album' | 'Playlist'
@@ -81,13 +100,43 @@ export const AestheticApp: React.FC<AestheticAppProps> = ({
   const [lyricsOpen, setLyricsOpen] = useState(settings.lyricsOpen);
   const [lyricsOnly, setLyricsOnly] = useState(false);
   const [lyricsMode, setLyricsMode] = useState<LyricsMode>(settings.defaultLyricsMode);
+  const [lyricsTimingOffsetMs, setLyricsTimingOffsetMs] = useState(0);
+
+  useEffect(() => {
+    setLyricsTimingOffsetMs(0);
+  }, [liveLyrics.trackKey]);
   const [settingsPopoverOpen, setSettingsPopoverOpen] = useState(false);
+  const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false);
+  const [searchFocusSignal, setSearchFocusSignal] = useState(0);
+  const [searchCloseDropdownSignal, setSearchCloseDropdownSignal] = useState(0);
+  const [searchDropdownOpen, setSearchDropdownOpen] = useState(false);
+  const [hudMessage, setHudMessage] = useState<string | null>(null);
+  const hudTimerRef = useRef<number | null>(null);
   const [customWallpaperVersion, setCustomWallpaperVersion] = useState(0);
   const [activeBrowseTarget, setActiveBrowseTarget] = useState<BrowseTarget | null>(null);
   const [browseDetails, setBrowseDetails] = useState<BrowseDetailsData | null>(null);
   const [browseLoading, setBrowseLoading] = useState(false);
   const [browseError, setBrowseError] = useState<string | null>(null);
   const browseRequestIdRef = useRef(0);
+
+  useEffect(() => {
+    return () => {
+      if (hudTimerRef.current !== null) {
+        window.clearTimeout(hudTimerRef.current);
+      }
+    };
+  }, []);
+
+  const showHud = (message: string) => {
+    setHudMessage(message);
+    if (hudTimerRef.current !== null) {
+      window.clearTimeout(hudTimerRef.current);
+    }
+    hudTimerRef.current = window.setTimeout(() => {
+      setHudMessage(null);
+      hudTimerRef.current = null;
+    }, 1600);
+  };
   const [isTabHidden, setIsTabHidden] = useState(() =>
     typeof document !== 'undefined' ? document.hidden : false
   );
@@ -181,11 +230,12 @@ export const AestheticApp: React.FC<AestheticAppProps> = ({
   const handleCycleTheme = async () => {
     const order: ThemePreset[] =
       settings.customBackgroundType !== 'none'
-        ? ['night-city', 'minimal-dark', 'cozy-room', 'custom']
-        : ['night-city', 'minimal-dark', 'cozy-room'];
+        ? [...STUDIO_THEME_ORDER, 'custom']
+        : [...STUDIO_THEME_ORDER];
     const idx = order.indexOf(settings.theme);
     const nextTheme = order[(idx + 1) % order.length];
     await applyThemePreset(nextTheme);
+    showHud(`Theme: ${THEME_DEFINITIONS[nextTheme].label}`);
   };
 
   const handleCycleBackgroundMode = async () => {
@@ -193,6 +243,20 @@ export const AestheticApp: React.FC<AestheticAppProps> = ({
     const idx = order.indexOf(settings.backgroundMode);
     const nextMode = order[(idx + 1) % order.length];
     await saveSettings({ backgroundMode: nextMode });
+    const bgLabels: Record<BackgroundMode, string> = {
+      auto: !activeTrack.hasVideo
+        ? 'Background: Auto (Ambient)'
+        : activeTrack.isVideoActive
+        ? 'Background: Auto (MV)'
+        : 'Background: Auto (Ambient)',
+      video: activeTrack.hasVideo
+        ? 'Background: Music Video'
+        : 'Background: MV Unavailable (Ambient)',
+      ambient: 'Background: Ambient',
+      off: 'Background: Dark Canvas',
+      custom: 'Background: Custom Wallpaper',
+    };
+    showHud(bgLabels[nextMode]);
   };
 
   const handleCycleLyricsMode = () => {
@@ -200,6 +264,12 @@ export const AestheticApp: React.FC<AestheticAppProps> = ({
     const next = order[(order.indexOf(lyricsMode) + 1) % order.length];
     setLyricsMode(next);
     saveSettings({ defaultLyricsMode: next });
+    const modeLabels: Record<LyricsMode, string> = {
+      focus: 'Lyrics: Focus',
+      compact: 'Lyrics: Compact',
+      full: 'Lyrics: Full View',
+    };
+    showHud(modeLabels[next]);
   };
 
   const handleToggleFullscreen = () => {
@@ -272,10 +342,59 @@ export const AestheticApp: React.FC<AestheticAppProps> = ({
 
   const handleToggleEye = () => {
     if (isLyricsVisible) {
-      setLyricsOnly((prev) => !prev);
+      setLyricsOnly((prev) => {
+        const next = !prev;
+        showHud(next ? 'Lyrics-Only View' : 'Standard Lyrics View');
+        return next;
+      });
     } else {
-      setZenMode((prev) => !prev);
+      setZenMode((prev) => {
+        const next = !prev;
+        showHud(next ? 'Zen Mode: On' : 'Zen Mode: Off');
+        return next;
+      });
     }
+  };
+
+  const handleToggleSearch = () => {
+    const nextShow = !settings.showSearchBar;
+    if (!nextShow) {
+      setActiveBrowseTarget(null);
+      setSearchDropdownOpen(false);
+    }
+    handleUpdateSettings({ showSearchBar: nextShow });
+    showHud(nextShow ? 'Search Bar: Shown' : 'Search Bar: Hidden');
+  };
+
+  const handleFocusSearchShortcut = () => {
+    setZenMode(false);
+    setActiveBrowseTarget(null);
+    if (!settings.showSearchBar) {
+      void saveSettings({ showSearchBar: true });
+    }
+    setSearchFocusSignal((n) => n + 1);
+  };
+
+  const handleToggleLyrics = () => {
+    const nextOpen = !lyricsOpen;
+    setLyricsOpen(nextOpen);
+    if (!nextOpen) {
+      setLyricsOnly(false);
+    }
+    setActiveBrowseTarget(null);
+    saveSettings({ lyricsOpen: nextOpen });
+    showHud(nextOpen ? 'Lyrics: Shown' : 'Lyrics: Hidden');
+  };
+
+  const handleToggleSidebar = () => {
+    const nextShow = !settings.showSidebar;
+    handleUpdateSettings({ showSidebar: nextShow });
+    showHud(nextShow ? 'Queue Sidebar: Shown' : 'Queue Sidebar: Hidden');
+  };
+
+  const handleToggleMute = () => {
+    actions.onToggleMute();
+    showHud(activeTrack.isMuted ? 'Unmuted' : 'Muted');
   };
 
   const isLyricsVisible = lyricsOpen && settings.lyricsEnabled;
@@ -286,6 +405,165 @@ export const AestheticApp: React.FC<AestheticAppProps> = ({
   const effectivePanelAlpha = settings.lowGpuMode
     ? Math.min(0.92, themeTokens.panelAlpha + 0.14)
     : themeTokens.panelAlpha;
+
+  const shortcutHandlerRef = useRef<(event: KeyboardEvent) => void>(() => {});
+  shortcutHandlerRef.current = (event: KeyboardEvent) => {
+    if (!settings.enabled) return;
+
+    const action = resolveAestheticShortcut(event, {
+      settingsPopoverOpen,
+      shortcutsHelpOpen,
+      detailsModalOpen,
+      searchDropdownOpen,
+      zenMode,
+      lyricsOnly,
+    });
+    if (!action) return;
+
+    if (action === 'escape') {
+      const layer = resolveEscapeTarget({
+        settingsPopoverOpen,
+        shortcutsHelpOpen,
+        detailsModalOpen,
+        searchDropdownOpen,
+        zenMode,
+        lyricsOnly,
+      });
+      if (!layer) return;
+      event.preventDefault();
+      event.stopPropagation();
+
+      const eventTarget = event.composedPath?.()[0] ?? event.target;
+      if (
+        eventTarget instanceof HTMLElement &&
+        (eventTarget.tagName === 'INPUT' || eventTarget.tagName === 'TEXTAREA')
+      ) {
+        eventTarget.blur();
+      }
+
+      switch (layer) {
+        case 'settings-popover':
+          setSettingsPopoverOpen(false);
+          break;
+        case 'shortcuts-help':
+          setShortcutsHelpOpen(false);
+          break;
+        case 'browse-modal':
+          setActiveBrowseTarget(null);
+          break;
+        case 'search-dropdown':
+          setSearchCloseDropdownSignal((n) => n + 1);
+          break;
+        case 'zen-mode':
+          setZenMode(false);
+          showHud('Zen Mode: Off');
+          break;
+        case 'lyrics-only':
+          setLyricsOnly(false);
+          showHud('Standard Lyrics View');
+          break;
+      }
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    switch (action) {
+      case 'toggle-play': {
+        const eventTarget = event.composedPath?.()[0] ?? event.target;
+        const rootNode =
+          eventTarget instanceof Node ? eventTarget.getRootNode?.() : null;
+        if (rootNode && 'activeElement' in rootNode) {
+          const activeEl = (rootNode as ShadowRoot).activeElement;
+          if (activeEl instanceof HTMLButtonElement) {
+            activeEl.blur();
+          }
+        }
+        handleTogglePlay();
+        showHud(activeTrack.isPlaying ? 'Paused' : 'Playing');
+        break;
+      }
+      case 'focus-search':
+        handleFocusSearchShortcut();
+        break;
+      case 'toggle-lyrics':
+        if (!settings.lyricsEnabled) {
+          showHud('Lyrics disabled in Studio');
+          return;
+        }
+        handleToggleLyrics();
+        break;
+      case 'cycle-lyrics-mode':
+        if (!settings.lyricsEnabled) {
+          showHud('Lyrics disabled in Studio');
+          return;
+        }
+        if (!lyricsOpen) {
+          setLyricsOpen(true);
+          setActiveBrowseTarget(null);
+          void saveSettings({ lyricsOpen: true });
+        }
+        handleCycleLyricsMode();
+        break;
+      case 'toggle-eye':
+        handleToggleEye();
+        break;
+      case 'toggle-sidebar':
+        handleToggleSidebar();
+        break;
+      case 'toggle-mute':
+        handleToggleMute();
+        break;
+      case 'previous-track':
+        handlePrevious();
+        showHud('Previous Track');
+        break;
+      case 'next-track':
+        handleNext();
+        showHud('Next Track');
+        break;
+      case 'toggle-shortcuts-help':
+        setShortcutsHelpOpen((prev) => !prev);
+        break;
+    }
+  };
+
+  const handleStartRadio = async (track: { videoId?: string; title: string }) => {
+    if (!track.videoId || !actions.onStartSongRadio) return;
+    await actions.onStartSongRadio(track.videoId);
+    showHud(`Radio: ${track.title}`);
+  };
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      shortcutHandlerRef.current(event);
+    };
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
+  }, []);
+
+  const activeMiniLyricText = (() => {
+    if (
+      !settings.showMiniLyricLine ||
+      !settings.lyricsEnabled ||
+      isLyricsVisible ||
+      zenMode ||
+      detailsModalOpen ||
+      searchDropdownOpen ||
+      !liveLyrics.available ||
+      !liveLyrics.isSynced ||
+      liveLyrics.lines.length === 0
+    ) {
+      return '';
+    }
+    const lineIdx = findActiveSyncedLineIndex(
+      liveLyrics.lines,
+      activeTrack.currentTime * 1000,
+      lyricsTimingOffsetMs
+    );
+    return lineIdx >= 0 ? liveLyrics.lines[lineIdx]?.text?.trim() || '' : '';
+  })();
 
   return (
     <div
@@ -339,6 +617,9 @@ export const AestheticApp: React.FC<AestheticAppProps> = ({
             ? actions.onRemoveQueueIndex
             : undefined
         }
+        onStartRadio={
+          hasLiveTrack && actions.onStartSongRadio ? handleStartRadio : undefined
+        }
         onRefreshQueue={actions.onRefreshQueue}
       />
 
@@ -363,7 +644,10 @@ export const AestheticApp: React.FC<AestheticAppProps> = ({
             !detailsModalOpen &&
             !hideLyricsArtwork
           }
+          stageStyle={settings.stageStyle}
           lyricsOpen={isLyricsVisible}
+          reducedMotion={settings.reducedMotion}
+          paused={effectsPaused}
           currentTrack={activeTrack}
           queue={activeQueue}
           borderRadius={settings.borderRadius}
@@ -379,6 +663,7 @@ export const AestheticApp: React.FC<AestheticAppProps> = ({
           mode={lyricsMode}
           lyrics={liveLyrics}
           currentTimeMs={activeTrack.currentTime * 1000}
+          timingOffsetMs={lyricsTimingOffsetMs}
           isPlaying={activeTrack.isPlaying}
           isVideoActive={activeTrack.isVideoActive}
           carouselVisible={
@@ -430,17 +715,40 @@ export const AestheticApp: React.FC<AestheticAppProps> = ({
         />
       </main>
 
-      {/* Bottom Dock Area: Search Bar + Quick Action Pills + Floating Player Bar */}
+      {/* Bottom Dock Area: Mini Lyric Line + Search Bar + Quick Action Pills + Floating Player Bar */}
       <footer className="w-full pb-[2.8vh] px-6 flex flex-col items-center gap-3 z-30 pointer-events-none">
-        {/* Integrated Search Bar */}
-        {!zenMode && (
-          <SearchBarOverlay
-            visible={settings.showSearchBar}
-            detailsOpen={detailsModalOpen}
-            onSearch={actions.onSearch}
-            onOpenDetails={handleOpenBrowseDetails}
-          />
+        {activeMiniLyricText && (
+          <button
+            type="button"
+            onClick={handleToggleLyrics}
+            title="Open synced lyrics (L)"
+            className="pointer-events-auto max-w-[min(640px,86vw)] px-4 py-1.5 rounded-full bg-black/50 hover:bg-black/65 backdrop-blur-xl border border-white/15 shadow-lg transition cursor-pointer flex items-center gap-2"
+          >
+            <span
+              className="w-1.5 h-1.5 rounded-full shrink-0"
+              style={{ backgroundColor: themeTokens.accentHighlight }}
+            />
+            <span className="text-[13px] font-medium text-white/95 truncate tracking-tight">
+              {activeMiniLyricText}
+            </span>
+          </button>
         )}
+
+        {/* Integrated Search Bar */}
+        <SearchBarOverlay
+          visible={settings.showSearchBar && !zenMode}
+          detailsOpen={detailsModalOpen}
+          focusSignal={searchFocusSignal}
+          closeDropdownSignal={searchCloseDropdownSignal}
+          onDropdownVisibilityChange={setSearchDropdownOpen}
+          onSearch={actions.onSearch}
+          onFetchLibraryHub={actions.onFetchLibraryHub}
+          onOpenDetails={handleOpenBrowseDetails}
+          onFetchBrowseDetails={actions.onFetchBrowseDetails}
+          onPlayBrowseCollection={actions.onPlayBrowseCollection}
+          onPlayBrowseTrack={actions.onPlayBrowseTrack}
+          onQueueBrowseTrack={actions.onQueueBrowseTrack}
+        />
 
         {/* Floating Quick Action Pills */}
         <FloatingQuickActions
@@ -451,13 +759,7 @@ export const AestheticApp: React.FC<AestheticAppProps> = ({
           backgroundMode={settings.backgroundMode}
           playerPosition={settings.playerPosition}
           onToggleEye={handleToggleEye}
-          onToggleSearch={() => {
-            const nextShow = !settings.showSearchBar;
-            if (!nextShow) {
-              setActiveBrowseTarget(null);
-            }
-            handleUpdateSettings({ showSearchBar: nextShow });
-          }}
+          onToggleSearch={handleToggleSearch}
           onCycleBackgroundMode={handleCycleBackgroundMode}
           onToggleFullscreen={handleToggleFullscreen}
         />
@@ -476,34 +778,53 @@ export const AestheticApp: React.FC<AestheticAppProps> = ({
           onToggleLike={actions.onToggleLike}
           onSeek={actions.onSeek}
           onVolumeChange={actions.onVolumeChange}
-          onToggleMute={actions.onToggleMute}
-          onToggleLyrics={() => {
-            const nextOpen = !lyricsOpen;
-            setLyricsOpen(nextOpen);
-            if (!nextOpen) {
-              setLyricsOnly(false);
-            }
-            setActiveBrowseTarget(null);
-            saveSettings({ lyricsOpen: nextOpen });
-          }}
-          onToggleSidebar={() =>
-            handleUpdateSettings({ showSidebar: !settings.showSidebar })
-          }
+          onToggleMute={handleToggleMute}
+          onToggleLyrics={handleToggleLyrics}
+          onToggleSidebar={handleToggleSidebar}
           onToggleSettingsPopover={() => setSettingsPopoverOpen((s) => !s)}
           onCycleTheme={handleCycleTheme}
         />
       </footer>
+
+      {hudMessage && (
+        <div
+          key={hudMessage}
+          role="status"
+          aria-live="polite"
+          className="fixed top-5 right-6 z-[60] pointer-events-none px-4 py-2 rounded-full bg-black/80 backdrop-blur-xl border border-white/15 shadow-2xl text-xs font-medium text-white tracking-wide flex items-center gap-2"
+        >
+          <span
+            className="w-1.5 h-1.5 rounded-full shrink-0"
+            style={{ backgroundColor: themeTokens.accentHighlight }}
+          />
+          <span>{hudMessage}</span>
+        </div>
+      )}
 
       {/* In-App Studio Settings Popover */}
       <InAppSettingsPopover
         open={settingsPopoverOpen}
         settings={settings}
         track={activeTrack}
+        lyrics={liveLyrics}
+        lyricsTimingOffsetMs={lyricsTimingOffsetMs}
+        onAdjustLyricsOffset={(deltaMs) =>
+          setLyricsTimingOffsetMs((prev) =>
+            clampLyricsTimingOffsetMs(prev + deltaMs)
+          )
+        }
+        onResetLyricsOffset={() => setLyricsTimingOffsetMs(0)}
         onClose={() => setSettingsPopoverOpen(false)}
         onUpdateSettings={handleUpdateSettings}
         onSelectTheme={handleSelectTheme}
         onReset={handleResetSettings}
         onWallpaperUploaded={() => setCustomWallpaperVersion((v) => v + 1)}
+        onOpenShortcutsHelp={() => setShortcutsHelpOpen(true)}
+      />
+
+      <ShortcutsModal
+        open={shortcutsHelpOpen}
+        onClose={() => setShortcutsHelpOpen(false)}
       />
     </div>
   );

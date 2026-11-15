@@ -1,6 +1,7 @@
 import {
   BrowseDetailsData,
   BrowseTrackItem,
+  LibraryHubSection,
   SearchResultCategory,
 } from './types';
 
@@ -94,6 +95,10 @@ export function inferBrowseKind(
   if (pageType === 'MUSIC_PAGE_TYPE_ALBUM') return 'Album';
   if (pageType === 'MUSIC_PAGE_TYPE_PLAYLIST') return 'Playlist';
 
+  if (browseId === 'FEmusic_liked_videos' || browseId === 'FEmusic_liked_playlists') {
+    return 'Playlist';
+  }
+  if (browseId === 'LM' || browseId === 'VLLM' || browseId === 'SE') return 'Playlist';
   if (browseId.startsWith('UC') || browseId.startsWith('FE')) return 'Artist';
   if (browseId.startsWith('MPREb_')) return 'Album';
   if (browseId.startsWith('VL') || browseId.startsWith('PL') || browseId.startsWith('RD')) {
@@ -125,11 +130,22 @@ export function classifySearchCategory(params: {
   if (pageType === 'MUSIC_PAGE_TYPE_PLAYLIST') {
     return 'Playlist';
   }
+  if (browseId === 'FEmusic_liked_videos' || browseId === 'FEmusic_liked_playlists') {
+    return 'Playlist';
+  }
 
   if (!hasVideoId && browseId) {
     if (browseId.startsWith('UC')) return 'Artist';
     if (browseId.startsWith('MPREb_')) return 'Album';
-    if (browseId.startsWith('VL')) return 'Playlist';
+    if (
+      browseId.startsWith('VL') ||
+      browseId.startsWith('PL') ||
+      browseId === 'LM' ||
+      browseId === 'VLLM' ||
+      browseId === 'SE'
+    ) {
+      return 'Playlist';
+    }
   }
 
   if (mvType === 'MUSIC_VIDEO_TYPE_OMV' || mvType === 'MUSIC_VIDEO_TYPE_UGC') {
@@ -146,7 +162,12 @@ export function classifySearchCategory(params: {
   if (subLower.startsWith('artist') || shelfLower === 'artists' || subLower.includes('monthly audience') || subLower.includes('subscribers')) {
     return 'Artist';
   }
-  if (combined.includes('video')) return 'Video';
+  if (!hasVideoId && combined.includes('playlist')) {
+    return 'Playlist';
+  }
+  if (combined.includes('video') && (hasVideoId || !combined.includes('playlist'))) {
+    return 'Video';
+  }
   if (!hasVideoId || subLower.startsWith('album') || subLower.startsWith('single') || subLower.startsWith('ep') || shelfLower === 'albums' || shelfLower === 'singles') {
     if (combined.includes('album') || combined.includes('single') || combined.includes('ep')) {
       return 'Album';
@@ -238,6 +259,194 @@ export function extractDurationText(item: any, flexColumns: any[]): string {
   }
 
   return '';
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function parseResponsiveSearchItem(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  item: any,
+  searchIndex: number,
+  shelfTitle: string,
+  inTopResult: boolean,
+  idPrefix: string
+): { result: RawBridgeSearchResult; dedupKey: string } | null {
+  const flexColumns = item?.flexColumns || [];
+  const runs0 =
+    flexColumns[0]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs || [];
+  const title = runsToText(runs0);
+  if (!title) return null;
+
+  const subtitleParts: string[] = [];
+  for (let i = 1; i < flexColumns.length; i++) {
+    const runs =
+      flexColumns[i]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs || [];
+    const colText = runsToText(runs);
+    if (colText) subtitleParts.push(colText);
+  }
+  const subtitle = subtitleParts.join(' • ');
+
+  const thumb = pickBestThumbnail(
+    item?.thumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails
+  );
+
+  const overlayWatch =
+    item?.overlay?.musicItemThumbnailOverlayRenderer?.content
+      ?.musicPlayButtonRenderer?.playNavigationEndpoint?.watchEndpoint ||
+    item?.overlay?.musicItemThumbnailOverlayRenderer?.content
+      ?.musicPlayButtonRenderer?.playNavigationEndpoint?.watchPlaylistEndpoint;
+
+  const directWatch =
+    runs0[0]?.navigationEndpoint?.watchEndpoint ||
+    item?.navigationEndpoint?.watchEndpoint ||
+    item?.doubleTapCommand?.watchEndpoint;
+
+  const browseEp =
+    runs0[0]?.navigationEndpoint?.browseEndpoint ||
+    item?.navigationEndpoint?.browseEndpoint;
+
+  const fullWatchEp = overlayWatch || directWatch;
+  const videoId =
+    (fullWatchEp?.videoId as string | undefined) ||
+    (item?.playlistItemData?.videoId as string | undefined);
+  const browseId = browseEp?.browseId as string | undefined;
+  const pageType = extractPageType(browseEp);
+  const { addToQueueEndpoint, playNextEndpoint, queuePlaylistId } =
+    extractQueueEndpoints(item?.menu?.menuRenderer?.items);
+  const playlistId =
+    (fullWatchEp?.playlistId as string | undefined) ||
+    queuePlaylistId ||
+    (browseId?.startsWith('VL')
+      ? browseId.slice(2)
+      : browseId?.startsWith('PL')
+      ? browseId
+      : browseId === 'FEmusic_liked_videos'
+      ? 'LM'
+      : undefined);
+  if (!videoId && !browseId && !playlistId) {
+    return null;
+  }
+
+  const resolvedWatchEp =
+    fullWatchEp || (videoId ? { videoId, ...(playlistId ? { playlistId } : {}) } : undefined);
+  const mvType =
+    fullWatchEp?.watchEndpointMusicSupportedConfigs?.watchEndpointMusicConfig
+      ?.musicVideoType;
+
+  const category = classifySearchCategory({
+    pageType,
+    mvType,
+    browseId,
+    subtitleText: subtitle,
+    shelfTitle,
+    hasVideoId: Boolean(videoId),
+  });
+  const dedupKey = `${category}:${videoId || browseId || `${title}-${subtitle}`}`;
+
+  return {
+    dedupKey,
+    result: {
+      id: `${idPrefix}-${searchIndex}-${videoId || browseId || searchIndex}`,
+      searchIndex,
+      title,
+      subtitle: subtitle || shelfTitle || 'YouTube Music',
+      category,
+      artworkUrl: upgradeGoogleImage(thumb) || thumb,
+      videoId,
+      playlistId,
+      browseId,
+      isTopResult: inTopResult,
+      shelfTitle: shelfTitle || undefined,
+      watchEndpoint: resolvedWatchEp,
+      addToQueueEndpoint,
+      playNextEndpoint,
+    },
+  };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function parseTwoRowItem(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  card: any,
+  searchIndex: number,
+  shelfTitle: string,
+  idPrefix: string
+): { result: RawBridgeSearchResult; dedupKey: string } | null {
+  const title = runsToText(card?.title?.runs);
+  if (!title) return null;
+
+  // Skip action-only library cards like "New playlist"
+  if (card?.navigationEndpoint?.createPlaylistEndpoint) {
+    return null;
+  }
+
+  const subtitle = runsToText(card?.subtitle?.runs);
+  const thumb = pickBestThumbnail(
+    card?.thumbnailRenderer?.musicThumbnailRenderer?.thumbnail?.thumbnails
+  );
+  const overlayWatch =
+    card?.thumbnailOverlay?.musicItemThumbnailOverlayRenderer?.content
+      ?.musicPlayButtonRenderer?.playNavigationEndpoint?.watchEndpoint ||
+    card?.thumbnailOverlay?.musicItemThumbnailOverlayRenderer?.content
+      ?.musicPlayButtonRenderer?.playNavigationEndpoint?.watchPlaylistEndpoint;
+  const directWatch =
+    card?.navigationEndpoint?.watchEndpoint ||
+    card?.navigationEndpoint?.watchPlaylistEndpoint;
+  const browseEp = card?.navigationEndpoint?.browseEndpoint;
+  const effectiveWatchEp = overlayWatch || directWatch;
+
+  const browseId = browseEp?.browseId as string | undefined;
+  const pageType = extractPageType(browseEp);
+  const videoId = effectiveWatchEp?.videoId as string | undefined;
+  const { addToQueueEndpoint, playNextEndpoint, queuePlaylistId } =
+    extractQueueEndpoints(card?.menu?.menuRenderer?.items);
+  const playlistId =
+    (effectiveWatchEp?.playlistId as string | undefined) ||
+    queuePlaylistId ||
+    (browseId?.startsWith('VL')
+      ? browseId.slice(2)
+      : browseId?.startsWith('PL')
+      ? browseId
+      : browseId === 'FEmusic_liked_videos'
+      ? 'LM'
+      : undefined);
+
+  if (!videoId && !browseId && !playlistId) {
+    return null;
+  }
+
+  const mvType =
+    effectiveWatchEp?.watchEndpointMusicSupportedConfigs?.watchEndpointMusicConfig
+      ?.musicVideoType;
+
+  const category = classifySearchCategory({
+    pageType,
+    mvType,
+    browseId,
+    subtitleText: subtitle,
+    shelfTitle,
+    hasVideoId: Boolean(videoId),
+  });
+  const dedupKey = `${category}:${videoId || browseId || `${title}-${subtitle}`}`;
+
+  return {
+    dedupKey,
+    result: {
+      id: `${idPrefix}-${searchIndex}-${videoId || browseId || searchIndex}`,
+      searchIndex,
+      title,
+      subtitle: subtitle || shelfTitle || 'YouTube Music',
+      category,
+      artworkUrl: upgradeGoogleImage(thumb) || thumb,
+      videoId,
+      playlistId,
+      browseId,
+      isTopResult: false,
+      shelfTitle: shelfTitle || undefined,
+      watchEndpoint: effectiveWatchEp || undefined,
+      addToQueueEndpoint,
+      playNextEndpoint,
+    },
+  };
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -345,81 +554,17 @@ export function extractSearchRenderers(root: any): RawBridgeSearchResult[] {
 
     // 2. musicResponsiveListItemRenderer (Songs, Videos, Albums, Artists, Playlists)
     if (node.musicResponsiveListItemRenderer) {
-      const item = node.musicResponsiveListItemRenderer;
-      const flexColumns = item?.flexColumns || [];
-      const runs0 =
-        flexColumns[0]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs || [];
-      const title = runsToText(runs0);
-
-      const subtitleParts: string[] = [];
-      for (let i = 1; i < flexColumns.length; i++) {
-        const runs =
-          flexColumns[i]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs || [];
-        const colText = runsToText(runs);
-        if (colText) subtitleParts.push(colText);
-      }
-      const subtitle = subtitleParts.join(' • ');
-
-      const thumb = pickBestThumbnail(
-        item?.thumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails
+      const parsed = parseResponsiveSearchItem(
+        node.musicResponsiveListItemRenderer,
+        idxCounter,
+        nextShelfTitle,
+        nextInTopResult,
+        'it-item'
       );
-
-      const overlayWatch =
-        item?.overlay?.musicItemThumbnailOverlayRenderer?.content
-          ?.musicPlayButtonRenderer?.playNavigationEndpoint?.watchEndpoint ||
-        item?.overlay?.musicItemThumbnailOverlayRenderer?.content
-          ?.musicPlayButtonRenderer?.playNavigationEndpoint?.watchPlaylistEndpoint;
-
-      const directWatch =
-        runs0[0]?.navigationEndpoint?.watchEndpoint ||
-        item?.navigationEndpoint?.watchEndpoint ||
-        item?.doubleTapCommand?.watchEndpoint;
-
-      const browseEp =
-        runs0[0]?.navigationEndpoint?.browseEndpoint ||
-        item?.navigationEndpoint?.browseEndpoint;
-
-      const fullWatchEp = overlayWatch || directWatch;
-      const videoId = fullWatchEp?.videoId as string | undefined;
-      const browseId = browseEp?.browseId as string | undefined;
-      const pageType = extractPageType(browseEp);
-      const { addToQueueEndpoint, playNextEndpoint, queuePlaylistId } =
-        extractQueueEndpoints(item?.menu?.menuRenderer?.items);
-      const playlistId =
-        (fullWatchEp?.playlistId as string | undefined) || queuePlaylistId;
-      const mvType =
-        fullWatchEp?.watchEndpointMusicSupportedConfigs?.watchEndpointMusicConfig
-          ?.musicVideoType;
-
-      if (title) {
-        const category = classifySearchCategory({
-          pageType,
-          mvType,
-          browseId,
-          subtitleText: subtitle,
-          shelfTitle: nextShelfTitle,
-          hasVideoId: Boolean(videoId),
-        });
-        const dedupKey = `${category}:${videoId || browseId || `${title}-${subtitle}`}`;
-        if (!seenKeys.has(dedupKey)) {
-          seenKeys.add(dedupKey);
-          results.push({
-            id: `it-item-${idxCounter}-${videoId || browseId || idxCounter}`,
-            searchIndex: idxCounter++,
-            title,
-            subtitle: subtitle || nextShelfTitle || 'YouTube Music',
-            category,
-            artworkUrl: upgradeGoogleImage(thumb) || thumb,
-            videoId,
-            playlistId,
-            browseId,
-            isTopResult: nextInTopResult,
-            shelfTitle: nextShelfTitle || undefined,
-            watchEndpoint: fullWatchEp || undefined,
-            addToQueueEndpoint,
-            playNextEndpoint,
-          });
-        }
+      if (parsed && !seenKeys.has(parsed.dedupKey)) {
+        seenKeys.add(parsed.dedupKey);
+        idxCounter++;
+        results.push(parsed.result);
       }
     }
 
@@ -438,6 +583,62 @@ export interface ParsedBrowseResult {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
+function flattenSectionEntries(nodes: unknown[], depth = 0): any[] {
+  if (!Array.isArray(nodes) || depth > 4) return [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const out: any[] = [];
+  for (const node of nodes) {
+    if (!node || typeof node !== 'object') continue;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rec = node as Record<string, any>;
+    out.push(rec);
+    const nestedItemSec = rec?.itemSectionRenderer?.contents;
+    if (Array.isArray(nestedItemSec)) {
+      out.push(...flattenSectionEntries(nestedItemSec, depth + 1));
+    }
+  }
+  return out;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function extractLegacyPlaylistTrackRow(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  pv: any,
+  index: number,
+  fallbackArtworkUrl: string,
+  fallbackPlaylistId?: string
+): BrowseTrackItem | null {
+  const videoId = pv?.videoId as string | undefined;
+  const title = runsToText(pv?.title?.runs) || pv?.title?.simpleText || '';
+  if (!title || !videoId) return null;
+
+  const artist =
+    runsToText(pv?.shortBylineText?.runs) ||
+    runsToText(pv?.longBylineText?.runs) ||
+    '';
+  const duration =
+    runsToText(pv?.lengthText?.runs) || pv?.lengthText?.simpleText || '';
+  const thumb = pickBestThumbnail(pv?.thumbnail?.thumbnails);
+  const resolvedArt = upgradeGoogleImage(thumb) || fallbackArtworkUrl || thumb;
+
+  return {
+    id: `bt-${index}-${videoId}`,
+    index,
+    title,
+    subtitle: artist || 'YouTube Music',
+    artist: artist || undefined,
+    duration,
+    artworkUrl: resolvedArt,
+    videoId,
+    playlistId: fallbackPlaylistId,
+    watchEndpoint: {
+      videoId,
+      ...(fallbackPlaylistId ? { playlistId: fallbackPlaylistId } : {}),
+    },
+  };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function findHeaderRenderer(json: any): any {
   const header = json?.header;
   if (header?.musicImmersiveHeaderRenderer) return header.musicImmersiveHeaderRenderer;
@@ -448,17 +649,16 @@ function findHeaderRenderer(json: any): any {
   if (editable?.musicResponsiveHeaderRenderer) return editable.musicResponsiveHeaderRenderer;
   if (editable?.musicDetailHeaderRenderer) return editable.musicDetailHeaderRenderer;
 
-  const twoColTabs =
+  const twoColTabs = flattenSectionEntries(
     json?.contents?.twoColumnBrowseResultsRenderer?.tabs?.[0]?.tabRenderer?.content
-      ?.sectionListRenderer?.contents;
-  if (Array.isArray(twoColTabs)) {
-    for (const entry of twoColTabs) {
-      if (entry?.musicResponsiveHeaderRenderer) return entry.musicResponsiveHeaderRenderer;
-      if (entry?.musicDetailHeaderRenderer) return entry.musicDetailHeaderRenderer;
-      const ed = entry?.musicEditablePlaylistDetailHeaderRenderer?.header;
-      if (ed?.musicResponsiveHeaderRenderer) return ed.musicResponsiveHeaderRenderer;
-      if (ed?.musicDetailHeaderRenderer) return ed.musicDetailHeaderRenderer;
-    }
+      ?.sectionListRenderer?.contents || []
+  );
+  for (const entry of twoColTabs) {
+    if (entry?.musicResponsiveHeaderRenderer) return entry.musicResponsiveHeaderRenderer;
+    if (entry?.musicDetailHeaderRenderer) return entry.musicDetailHeaderRenderer;
+    const ed = entry?.musicEditablePlaylistDetailHeaderRenderer?.header;
+    if (ed?.musicResponsiveHeaderRenderer) return ed.musicResponsiveHeaderRenderer;
+    if (ed?.musicDetailHeaderRenderer) return ed.musicDetailHeaderRenderer;
   }
   return null;
 }
@@ -591,7 +791,14 @@ export function parseBrowseDetails(
       ? 'Artist'
       : inferBrowseKind(browseId, undefined, headerSubRuns));
 
-  const title = runsToText(header?.title?.runs) || 'Details';
+  const resolvedTitle =
+    runsToText(header?.title?.runs) ||
+    (browseId === 'FEmusic_liked_videos'
+      ? 'Liked Music'
+      : browseId === 'FEmusic_liked_playlists'
+      ? 'Your Playlists'
+      : 'Details');
+  const title = resolvedTitle;
   const rawArt =
     pickBestThumbnail(
       header?.thumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails
@@ -621,6 +828,7 @@ export function parseBrowseDetails(
 
   // Extract header Play & Shuffle endpoints
   let playEndpoint: Record<string, unknown> | undefined =
+    header?.playButton?.musicPlayButtonRenderer?.playNavigationEndpoint ||
     header?.playButton?.buttonRenderer?.navigationEndpoint ||
     header?.playButton?.buttonRenderer?.command;
   let shuffleEndpoint: Record<string, unknown> | undefined;
@@ -669,33 +877,41 @@ export function parseBrowseDetails(
     (playEndpoint?.watchEndpoint as { playlistId?: string } | undefined)?.playlistId ||
     (shuffleEndpoint?.watchPlaylistEndpoint as { playlistId?: string } | undefined)
       ?.playlistId ||
-    (browseId.startsWith('VL') ? browseId.slice(2) : undefined);
+    (browseId.startsWith('VL')
+      ? browseId.slice(2)
+      : /^(PL|UU|FL|LL|RD|OLAK)/.test(browseId)
+      ? browseId
+      : browseId === 'FEmusic_liked_videos'
+      ? 'LM'
+      : undefined);
 
-  // Locate primary/secondary section containers
-  const sections: unknown[] = [];
+  // Locate primary/secondary section containers (including nested itemSectionRenderer wrappers)
+  const rawSections: unknown[] = [];
   const singleColSections =
     json?.contents?.singleColumnBrowseResultsRenderer?.tabs?.[0]?.tabRenderer?.content
       ?.sectionListRenderer?.contents;
-  if (Array.isArray(singleColSections)) sections.push(...singleColSections);
+  if (Array.isArray(singleColSections)) rawSections.push(...singleColSections);
 
   const twoColSecondary =
     json?.contents?.twoColumnBrowseResultsRenderer?.secondaryContents
       ?.sectionListRenderer?.contents;
-  if (Array.isArray(twoColSecondary)) sections.push(...twoColSecondary);
+  if (Array.isArray(twoColSecondary)) rawSections.push(...twoColSecondary);
 
   const twoColPrimary =
     json?.contents?.twoColumnBrowseResultsRenderer?.tabs?.[0]?.tabRenderer?.content
       ?.sectionListRenderer?.contents;
-  if (Array.isArray(twoColPrimary)) sections.push(...twoColPrimary);
+  if (Array.isArray(twoColPrimary)) rawSections.push(...twoColPrimary);
+
+  const sections = flattenSectionEntries(rawSections);
 
   const tracks: BrowseTrackItem[] = [];
   let moreTracksBrowseEndpoint: { browseId: string; params?: string } | undefined;
 
-  for (const sec of sections) {
-    const rec = sec as Record<string, unknown>;
+  for (const rec of sections) {
     const shelf =
       (rec?.musicShelfRenderer as Record<string, unknown> | undefined) ||
-      (rec?.musicPlaylistShelfRenderer as Record<string, unknown> | undefined);
+      (rec?.musicPlaylistShelfRenderer as Record<string, unknown> | undefined) ||
+      (rec?.playlistVideoListRenderer as Record<string, unknown> | undefined);
     if (!shelf) continue;
 
     const shelfHeading = runsToText(
@@ -712,18 +928,39 @@ export function parseBrowseDetails(
     }
 
     const shelfContents = Array.isArray(shelf?.contents) ? shelf.contents : [];
+    const seenTrackIds = new Set<string>(
+      tracks.map((t) => t.videoId || t.id).filter(Boolean)
+    );
     for (const entry of shelfContents) {
-      const rli = (entry as Record<string, unknown>)?.musicResponsiveListItemRenderer;
-      if (!rli) continue;
-      const parsed = extractResponsiveTrackRow(
-        rli,
-        tracks.length,
-        artworkUrl,
-        headerPlaylistId,
-        inferredKind === 'Artist' ? title : strapline || undefined
-      );
-      if (parsed && parsed.videoId) {
-        tracks.push(parsed);
+      const entryRec = entry as Record<string, unknown>;
+      const rli = entryRec?.musicResponsiveListItemRenderer;
+      if (rli) {
+        const parsed = extractResponsiveTrackRow(
+          rli,
+          tracks.length,
+          artworkUrl,
+          headerPlaylistId,
+          inferredKind === 'Artist' ? title : strapline || undefined
+        );
+        if (parsed && parsed.videoId && !seenTrackIds.has(parsed.videoId)) {
+          seenTrackIds.add(parsed.videoId);
+          tracks.push(parsed);
+        }
+        continue;
+      }
+
+      const pv = entryRec?.playlistVideoRenderer;
+      if (pv) {
+        const parsed = extractLegacyPlaylistTrackRow(
+          pv,
+          tracks.length,
+          artworkUrl,
+          headerPlaylistId
+        );
+        if (parsed && parsed.videoId && !seenTrackIds.has(parsed.videoId)) {
+          seenTrackIds.add(parsed.videoId);
+          tracks.push(parsed);
+        }
       }
     }
 
@@ -744,7 +981,10 @@ export function parseBrowseDetails(
   }
 
   const resolvedPlaylistId =
-    headerPlaylistId || tracks.find((t) => t.playlistId)?.playlistId;
+    headerPlaylistId ||
+    tracks.find((t) => t.playlistId)?.playlistId ||
+    (browseId === 'FEmusic_liked_videos' ? 'LM' : undefined);
+  const resolvedArtworkUrl = artworkUrl || tracks.find((t) => t.artworkUrl)?.artworkUrl || '';
 
   return {
     details: {
@@ -753,7 +993,7 @@ export function parseBrowseDetails(
       title,
       subtitle,
       description: description || undefined,
-      artworkUrl,
+      artworkUrl: resolvedArtworkUrl,
       playlistId: resolvedPlaylistId,
       playEndpoint,
       shuffleEndpoint,
@@ -786,25 +1026,150 @@ export function extractTracksFromBrowseShelf(
   const twoColSec =
     json?.contents?.twoColumnBrowseResultsRenderer?.secondaryContents
       ?.sectionListRenderer?.contents || [];
+  const twoColPrimary =
+    json?.contents?.twoColumnBrowseResultsRenderer?.tabs?.[0]?.tabRenderer?.content
+      ?.sectionListRenderer?.contents || [];
 
-  for (const sec of [...singleCol, ...twoColSec]) {
-    const shelf = sec?.musicPlaylistShelfRenderer || sec?.musicShelfRenderer;
+  for (const sec of flattenSectionEntries([...singleCol, ...twoColSec, ...twoColPrimary])) {
+    const shelf =
+      sec?.musicPlaylistShelfRenderer ||
+      sec?.musicShelfRenderer ||
+      sec?.playlistVideoListRenderer;
     if (!shelf || !Array.isArray(shelf.contents)) continue;
     for (const entry of shelf.contents) {
       const rli = entry?.musicResponsiveListItemRenderer;
-      if (!rli) continue;
-      const parsed = extractResponsiveTrackRow(
-        rli,
-        tracks.length,
-        fallbackArtworkUrl,
-        fallbackPlaylistId,
-        fallbackArtist
-      );
-      if (parsed?.videoId && !seenVids.has(parsed.videoId)) {
-        seenVids.add(parsed.videoId);
-        tracks.push(parsed);
+      if (rli) {
+        const parsed = extractResponsiveTrackRow(
+          rli,
+          tracks.length,
+          fallbackArtworkUrl,
+          fallbackPlaylistId,
+          fallbackArtist
+        );
+        if (parsed?.videoId && !seenVids.has(parsed.videoId)) {
+          seenVids.add(parsed.videoId);
+          tracks.push(parsed);
+        }
+        continue;
+      }
+
+      const pv = entry?.playlistVideoRenderer;
+      if (pv) {
+        const parsed = extractLegacyPlaylistTrackRow(
+          pv,
+          tracks.length,
+          fallbackArtworkUrl,
+          fallbackPlaylistId
+        );
+        if (parsed?.videoId && !seenVids.has(parsed.videoId)) {
+          seenVids.add(parsed.videoId);
+          tracks.push(parsed);
+        }
       }
     }
   }
   return tracks;
+}
+
+const LIBRARY_SECTION_DEFAULT_TITLES: Record<LibraryHubSection, string> = {
+  liked: 'Liked Songs',
+  playlists: 'Playlists',
+  home: 'Quick Picks',
+};
+
+/**
+ * Extracts items from authenticated YouTube Music library/home browse responses
+ * (`FEmusic_liked_videos`, `FEmusic_liked_playlists`, `FEmusic_home`).
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function extractLibraryHubItems(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  root: any,
+  section: LibraryHubSection,
+  limit = 36
+): RawBridgeSearchResult[] {
+  const results: RawBridgeSearchResult[] = [];
+  const seenKeys = new Set<string>();
+  const defaultShelf = LIBRARY_SECTION_DEFAULT_TITLES[section];
+  let idxCounter = 0;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function walk(node: any, currentShelfTitle = defaultShelf) {
+    if (!node || typeof node !== 'object' || results.length >= limit) return;
+
+    if (Array.isArray(node)) {
+      for (const child of node) {
+        if (results.length >= limit) break;
+        walk(child, currentShelfTitle);
+      }
+      return;
+    }
+
+    let nextShelfTitle = currentShelfTitle;
+    const carouselTitle = runsToText(
+      node.musicCarouselShelfRenderer?.header?.musicCarouselShelfBasicRenderer?.title?.runs
+    );
+    const shelfTitle = runsToText(node.musicShelfRenderer?.title?.runs);
+    const gridTitle = runsToText(
+      node.gridRenderer?.header?.gridHeaderRenderer?.title?.runs
+    );
+    if (carouselTitle) nextShelfTitle = carouselTitle;
+    else if (shelfTitle) nextShelfTitle = shelfTitle;
+    else if (gridTitle) nextShelfTitle = gridTitle;
+
+    const appendCandidate = (
+      parsed: { result: RawBridgeSearchResult; dedupKey: string } | null
+    ) => {
+      if (!parsed) return;
+      const result =
+        section === 'playlists' &&
+        !parsed.result.videoId &&
+        parsed.result.category !== 'Artist' &&
+        parsed.result.category !== 'Album' &&
+        (parsed.result.browseId || parsed.result.playlistId)
+          ? { ...parsed.result, category: 'Playlist' as const }
+          : parsed.result;
+      const key = `${result.category}:${
+        result.videoId || result.browseId || result.playlistId || result.title
+      }`;
+      if (!seenKeys.has(key)) {
+        seenKeys.add(key);
+        idxCounter++;
+        results.push(result);
+      }
+    };
+
+    if (node.musicTwoRowItemRenderer) {
+      appendCandidate(
+        parseTwoRowItem(
+          node.musicTwoRowItemRenderer,
+          idxCounter,
+          nextShelfTitle,
+          `lib-${section}`
+        )
+      );
+      return;
+    }
+
+    if (node.musicResponsiveListItemRenderer) {
+      appendCandidate(
+        parseResponsiveSearchItem(
+          node.musicResponsiveListItemRenderer,
+          idxCounter,
+          nextShelfTitle,
+          false,
+          `lib-${section}`
+        )
+      );
+      return;
+    }
+
+    for (const key of Object.keys(node)) {
+      if (results.length >= limit) break;
+      walk(node[key], nextShelfTitle);
+    }
+  }
+
+  walk(root);
+  return results;
 }

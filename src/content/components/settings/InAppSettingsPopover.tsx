@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   X,
   Sparkles,
@@ -14,16 +14,27 @@ import {
   Type,
   Trash2,
   ExternalLink,
+  Keyboard,
+  Copy,
+  Check,
 } from 'lucide-react';
 import {
   AestheticSettings,
+  AmbientParticles,
   BackgroundMode,
+  LyricsData,
   PlayerPosition,
+  StageStyle,
   ThemePreset,
   TrackMetadata,
 } from '../../../shared/types';
 import {
+  formatLyricsForCopy,
+  formatLyricsOffsetLabel,
+} from '../../../shared/lyricsParser';
+import {
   ACCENT_SWATCHES,
+  ALL_THEME_ORDER,
   THEME_DEFINITIONS,
 } from '../../../shared/themeTokens';
 import {
@@ -36,7 +47,12 @@ interface InAppSettingsPopoverProps {
   open: boolean;
   settings: AestheticSettings;
   track: TrackMetadata;
+  lyrics: LyricsData;
+  lyricsTimingOffsetMs: number;
+  onAdjustLyricsOffset: (deltaMs: number) => void;
+  onResetLyricsOffset: () => void;
   onClose: () => void;
+  onOpenShortcutsHelp?: () => void;
   onUpdateSettings: (partial: Partial<AestheticSettings>) => void;
   onSelectTheme: (preset: ThemePreset) => void;
   onReset: () => void;
@@ -83,16 +99,102 @@ export const InAppSettingsPopover: React.FC<InAppSettingsPopoverProps> = ({
   open,
   settings,
   track,
+  lyrics,
+  lyricsTimingOffsetMs,
+  onAdjustLyricsOffset,
+  onResetLyricsOffset,
   onClose,
+  onOpenShortcutsHelp,
   onUpdateSettings,
   onSelectTheme,
   onReset,
   onWallpaperUploaded,
 }) => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const popoverRef = useRef<HTMLDivElement | null>(null);
+  const copyTimerRef = useRef<number | null>(null);
   const [activeTab, setActiveTab] = useState<PopoverTab>('presets');
   const [uploadStatus, setUploadStatus] = useState<string>('');
   const [isDragging, setIsDragging] = useState(false);
+  const [copiedLyrics, setCopiedLyrics] = useState(false);
+
+  const hasLyrics = lyrics.available && lyrics.lines.length > 0;
+
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current !== null) {
+        window.clearTimeout(copyTimerRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    setCopiedLyrics(false);
+  }, [lyrics.trackKey, open]);
+
+  const handleCopyLyrics = async () => {
+    const text = formatLyricsForCopy(lyrics.lines);
+    if (!text) return;
+
+    let copied = false;
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        copied = true;
+      }
+    } catch {
+      copied = false;
+    }
+
+    if (!copied) {
+      try {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.setAttribute('readonly', 'true');
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        textarea.style.pointerEvents = 'none';
+        document.body.appendChild(textarea);
+        textarea.select();
+        copied = document.execCommand('copy');
+        document.body.removeChild(textarea);
+      } catch {
+        copied = false;
+      }
+    }
+
+    if (copied) {
+      setCopiedLyrics(true);
+      if (copyTimerRef.current !== null) {
+        window.clearTimeout(copyTimerRef.current);
+      }
+      copyTimerRef.current = window.setTimeout(() => {
+        setCopiedLyrics(false);
+        copyTimerRef.current = null;
+      }, 1500);
+    }
+  };
+
+  // Close Studio Controls when clicking outside (Shadow DOM safe via composedPath)
+  useEffect(() => {
+    if (!open) return;
+    const handlePointerDown = (e: Event) => {
+      const panel = popoverRef.current;
+      if (!panel) return;
+      const path = e.composedPath?.() || [];
+      if (path.includes(panel)) return;
+      const hitTrigger = path.some(
+        (node) =>
+          node instanceof Element &&
+          node.getAttribute('data-aesthetic-settings-trigger') === 'true'
+      );
+      if (!hitTrigger) {
+        onClose();
+      }
+    };
+    window.addEventListener('pointerdown', handlePointerDown, true);
+    return () => window.removeEventListener('pointerdown', handlePointerDown, true);
+  }, [open, onClose]);
 
   if (!open) return null;
 
@@ -181,16 +283,17 @@ export const InAppSettingsPopover: React.FC<InAppSettingsPopoverProps> = ({
     { id: 'off', label: 'Minimal Off', icon: <EyeOff className="w-4 h-4" /> },
   ];
 
-  const themeOrder: ThemePreset[] = ['night-city', 'minimal-dark', 'cozy-room', 'custom'];
+  const themeOrder = ALL_THEME_ORDER;
 
   const tabs: { id: PopoverTab; label: string; icon: React.ReactNode }[] = [
     { id: 'presets', label: 'Presets', icon: <Sparkles className="w-3.5 h-3.5" /> },
-    { id: 'appearance', label: 'Clock & UI', icon: <Type className="w-3.5 h-3.5" /> },
+    { id: 'appearance', label: 'UI & Lyrics', icon: <Type className="w-3.5 h-3.5" /> },
     { id: 'wallpaper', label: 'Wallpaper', icon: <ImageIcon className="w-3.5 h-3.5" /> },
   ];
 
   return (
     <div
+      ref={popoverRef}
       className="fixed bottom-28 right-8 xl:right-[14vw] w-[400px] max-h-[72vh] flex flex-col rounded-3xl p-5 z-50 text-zinc-100 pointer-events-auto"
       style={{
         background: 'rgba(16, 17, 23, 0.92)',
@@ -211,13 +314,30 @@ export const InAppSettingsPopover: React.FC<InAppSettingsPopoverProps> = ({
             v{EXTENSION_VERSION}
           </span>
         </div>
-        <button
-          onClick={onClose}
-          title="Close Studio Controls"
-          className="w-9 h-9 rounded-full flex items-center justify-center hover:bg-white/10 text-zinc-400 hover:text-white transition cursor-pointer shrink-0"
-        >
-          <X className="w-5 h-5" />
-        </button>
+        <div className="flex items-center gap-1 shrink-0">
+          {onOpenShortcutsHelp && (
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                onOpenShortcutsHelp();
+              }}
+              title="Keyboard Shortcuts (?)"
+              aria-label="Keyboard Shortcuts"
+              className="w-9 h-9 rounded-full flex items-center justify-center hover:bg-white/10 text-zinc-400 hover:text-white transition cursor-pointer shrink-0"
+            >
+              <Keyboard className="w-4 h-4" />
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onClose}
+            title="Close Studio Controls (Esc)"
+            className="w-9 h-9 rounded-full flex items-center justify-center hover:bg-white/10 text-zinc-400 hover:text-white transition cursor-pointer shrink-0"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
       </div>
 
       {/* Live Background Engine Status Badge */}
@@ -278,6 +398,8 @@ export const InAppSettingsPopover: React.FC<InAppSettingsPopoverProps> = ({
                       type="button"
                       onClick={() => onSelectTheme(id)}
                       className={`p-3 rounded-2xl border text-left transition cursor-pointer ${
+                        id === 'custom' ? 'col-span-2' : ''
+                      } ${
                         active
                           ? 'border-[var(--aesthetic-accent-strong,#C28356)] bg-white/[0.09]'
                           : 'border-white/10 bg-white/[0.03] hover:bg-white/[0.06]'
@@ -360,6 +482,40 @@ export const InAppSettingsPopover: React.FC<InAppSettingsPopoverProps> = ({
                 Film Grain: {settings.filmGrain ? 'ON' : 'OFF'}
               </button>
             </div>
+
+            {/* Ambient Particles */}
+            <div className="space-y-1.5 pt-2 border-t border-white/10">
+              <div className="flex items-center justify-between">
+                <label className="text-[10.5px] font-semibold uppercase tracking-wider text-zinc-400">
+                  Ambient Particles
+                </label>
+                {settings.lowGpuMode && (
+                  <span className="text-[10px] text-amber-300/80">Paused in Low GPU Mode</span>
+                )}
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {(
+                  [
+                    { id: 'none', label: 'Off' },
+                    { id: 'dust', label: 'Warm Dust' },
+                    { id: 'bokeh', label: 'Soft Bokeh' },
+                  ] as { id: AmbientParticles; label: string }[]
+                ).map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => onUpdateSettings({ ambientParticles: p.id })}
+                    className={`py-2.5 rounded-xl text-[12px] font-medium border transition cursor-pointer ${
+                      settings.ambientParticles === p.id
+                        ? 'bg-white/15 border-white/30 text-white'
+                        : 'bg-white/[0.03] border-white/10 text-zinc-400 hover:text-zinc-200'
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
           </>
         )}
 
@@ -437,6 +593,35 @@ export const InAppSettingsPopover: React.FC<InAppSettingsPopoverProps> = ({
                     />
                   );
                 })}
+              </div>
+            </div>
+
+            {/* Stage Style */}
+            <div className="space-y-1.5">
+              <label className="text-[10.5px] font-semibold uppercase tracking-wider text-zinc-400">
+                Center Stage Style
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                {(
+                  [
+                    { id: 'carousel', label: '3D Carousel' },
+                    { id: 'vinyl', label: 'Vinyl Disc' },
+                    { id: 'minimal', label: 'Minimal' },
+                  ] as { id: StageStyle; label: string }[]
+                ).map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => onUpdateSettings({ stageStyle: s.id })}
+                    className={`py-2.5 rounded-xl text-[12px] font-medium border transition cursor-pointer ${
+                      settings.stageStyle === s.id
+                        ? 'bg-white/15 border-white/30 text-white'
+                        : 'bg-white/[0.03] border-white/10 text-zinc-400 hover:text-zinc-200'
+                    }`}
+                  >
+                    {s.label}
+                  </button>
+                ))}
               </div>
             </div>
 
@@ -532,6 +717,121 @@ export const InAppSettingsPopover: React.FC<InAppSettingsPopoverProps> = ({
                 value={settings.borderRadius}
                 onChange={(val) => onUpdateSettings({ borderRadius: val })}
               />
+            </div>
+
+            {/* Lyrics Timing Sync & Copy */}
+            <div className="space-y-2.5 pt-2.5 border-t border-white/10">
+              <div className="flex items-center justify-between gap-2">
+                <label className="text-[10.5px] font-semibold uppercase tracking-wider text-zinc-400">
+                  Lyrics Sync & Copy
+                </label>
+                {lyrics.source && (
+                  <span className="text-[10px] text-zinc-500 truncate max-w-[160px]">
+                    {lyrics.source}
+                  </span>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={() =>
+                  onUpdateSettings({ showMiniLyricLine: !settings.showMiniLyricLine })
+                }
+                className="w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-2xl bg-white/[0.04] hover:bg-white/[0.07] border border-white/10 text-left transition cursor-pointer"
+              >
+                <div className="min-w-0">
+                  <div className="text-[12px] font-medium text-zinc-200">
+                    Mini 1-Line Subtitle
+                  </div>
+                  <div className="text-[10px] text-zinc-400 truncate">
+                    Show synced lyric above dock when Lyrics panel is closed
+                  </div>
+                </div>
+                <span
+                  className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border shrink-0 transition ${
+                    settings.showMiniLyricLine
+                      ? 'bg-white/15 border-white/30 text-white'
+                      : 'bg-black/35 border-white/10 text-zinc-500'
+                  }`}
+                >
+                  {settings.showMiniLyricLine ? 'ON' : 'OFF'}
+                </span>
+              </button>
+
+              <div className="flex items-center justify-between gap-2 px-3 py-2.5 rounded-2xl bg-white/[0.04] border border-white/10">
+                <div className="min-w-0">
+                  <div className="text-[12px] font-medium text-zinc-200">
+                    Sync Timing Offset
+                  </div>
+                  <div className="text-[10px] text-zinc-400 truncate">
+                    {lyrics.isSynced
+                      ? 'Shift live lyric highlight earlier or later'
+                      : 'Available when synced lyrics are active'}
+                  </div>
+                </div>
+
+                <div className="inline-flex items-center rounded-xl bg-black/40 border border-white/10 p-0.5 text-[11px] shrink-0">
+                  <button
+                    type="button"
+                    disabled={!lyrics.isSynced}
+                    onClick={() => onAdjustLyricsOffset(-500)}
+                    title="Shift lyrics 0.5s earlier"
+                    aria-label="Shift lyrics 0.5 seconds earlier"
+                    className="px-2 py-1 rounded-lg text-zinc-300 hover:text-white hover:bg-white/10 disabled:opacity-40 disabled:pointer-events-none transition cursor-pointer"
+                  >
+                    -0.5s
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!lyrics.isSynced || lyricsTimingOffsetMs === 0}
+                    onClick={onResetLyricsOffset}
+                    title="Reset lyric timing offset to 0.0s"
+                    aria-label="Reset lyric timing offset"
+                    className={`px-2 py-1 rounded-lg font-mono text-[10.5px] transition cursor-pointer disabled:pointer-events-none ${
+                      lyricsTimingOffsetMs !== 0 && lyrics.isSynced
+                        ? 'text-white bg-white/15 hover:bg-white/20'
+                        : 'text-zinc-500'
+                    }`}
+                  >
+                    {formatLyricsOffsetLabel(lyricsTimingOffsetMs)}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!lyrics.isSynced}
+                    onClick={() => onAdjustLyricsOffset(500)}
+                    title="Shift lyrics 0.5s later"
+                    aria-label="Shift lyrics 0.5 seconds later"
+                    className="px-2 py-1 rounded-lg text-zinc-300 hover:text-white hover:bg-white/10 disabled:opacity-40 disabled:pointer-events-none transition cursor-pointer"
+                  >
+                    +0.5s
+                  </button>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                disabled={!hasLyrics}
+                onClick={() => void handleCopyLyrics()}
+                className={`w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-[12px] font-medium border transition cursor-pointer disabled:opacity-40 disabled:pointer-events-none ${
+                  copiedLyrics
+                    ? 'bg-emerald-500/15 border-emerald-400/35 text-emerald-300'
+                    : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/10 text-zinc-200'
+                }`}
+              >
+                {copiedLyrics ? (
+                  <>
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Copied Lyrics to Clipboard</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>
+                      {hasLyrics ? 'Copy Current Track Lyrics' : 'No Lyrics Loaded Yet'}
+                    </span>
+                  </>
+                )}
+              </button>
             </div>
           </>
         )}

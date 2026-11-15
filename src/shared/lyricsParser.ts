@@ -162,3 +162,55 @@ export function pickBestLrcCandidate(
 
   return bestScore > 20 ? best : null;
 }
+
+export const LYRICS_TIMING_OFFSET_MIN_MS = -10_000;
+export const LYRICS_TIMING_OFFSET_MAX_MS = 10_000;
+
+/** Clamps a per-session lyrics timing shift (ms) cleanly inside [-10s, +10s]. */
+export function clampLyricsTimingOffsetMs(offsetMs: number): number {
+  if (!Number.isFinite(offsetMs)) return 0;
+  return Math.min(
+    LYRICS_TIMING_OFFSET_MAX_MS,
+    Math.max(LYRICS_TIMING_OFFSET_MIN_MS, Math.round(offsetMs))
+  );
+}
+
+/** Formats signed offset seconds cleanly (e.g. "+0.5s", "-1.0s", "0.0s"). */
+export function formatLyricsOffsetLabel(offsetMs: number): string {
+  const clamped = clampLyricsTimingOffsetMs(offsetMs);
+  if (clamped === 0) return '0.0s';
+  const sign = clamped > 0 ? '+' : '-';
+  return `${sign}${(Math.abs(clamped) / 1000).toFixed(1)}s`;
+}
+
+/**
+ * Resolves the active synced lyric index at `playbackTimeMs` with a manual shift (`timingOffsetMs`).
+ * Positive `timingOffsetMs` shifts lyrics later so lines fire at `startTimeMs + timingOffsetMs`.
+ */
+export function findActiveSyncedLineIndex(
+  lines: LyricLine[],
+  playbackTimeMs: number,
+  timingOffsetMs = 0
+): number {
+  if (!Array.isArray(lines) || lines.length === 0 || !Number.isFinite(playbackTimeMs)) {
+    return -1;
+  }
+  const adjustedTimeMs = playbackTimeMs - clampLyricsTimingOffsetMs(timingOffsetMs);
+  let lastStarted = -1;
+  for (let i = 0; i < lines.length; i++) {
+    const start = lines[i].startTimeMs;
+    if (typeof start === 'number' && adjustedTimeMs >= start) {
+      lastStarted = i;
+    }
+  }
+  return lastStarted;
+}
+
+/** Joins visible lyric lines into clean newline-separated text for clipboard copy. */
+export function formatLyricsForCopy(lines: LyricLine[]): string {
+  return lines
+    .map((line) => line.text.trim())
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}

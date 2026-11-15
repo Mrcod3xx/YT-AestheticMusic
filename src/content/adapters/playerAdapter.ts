@@ -17,7 +17,10 @@ function getConnectedVideoEl(): HTMLVideoElement | null {
   if (cachedVideoEl && cachedVideoEl.isConnected) {
     return cachedVideoEl;
   }
-  cachedVideoEl = document.querySelector('video.html5-main-video') as HTMLVideoElement | null;
+  cachedVideoEl =
+    (document.querySelector('video.html5-main-video') as HTMLVideoElement | null) ||
+    (document.querySelector('#movie_player video') as HTMLVideoElement | null) ||
+    (document.querySelector('video') as HTMLVideoElement | null);
   return cachedVideoEl;
 }
 
@@ -80,6 +83,21 @@ export function readLiveTrackMetadata(): TrackMetadata | null {
     likeBtn?.getAttribute('aria-pressed') === 'true' ||
     likeRenderer?.getAttribute('like-status') === 'LIKE';
 
+  const playPauseBtn = playerBar?.querySelector('#play-pause-button') as HTMLElement | null;
+  const playBtnInner = playPauseBtn?.querySelector('button') as HTMLElement | null;
+  const playStateLabel = (
+    playPauseBtn?.getAttribute('title') ||
+    playPauseBtn?.getAttribute('aria-label') ||
+    playBtnInner?.getAttribute('aria-label') ||
+    ''
+  ).toLowerCase();
+  const isPlayingFromButton = playStateLabel.includes('pause');
+  const isPausedFromButton = playStateLabel.includes('play');
+  const isPlaying = videoEl
+    ? !videoEl.paused && !videoEl.ended
+    : isPlayingFromButton ||
+      (!isPausedFromButton && Boolean(playerBar?.hasAttribute('playing')));
+
   return {
     id: `${title}-${artist}`,
     title,
@@ -90,7 +108,7 @@ export function readLiveTrackMetadata(): TrackMetadata | null {
     duration:
       videoEl?.duration && Number.isFinite(videoEl.duration) ? videoEl.duration : 0,
     currentTime: videoEl?.currentTime || 0,
-    isPlaying: videoEl ? !videoEl.paused : false,
+    isPlaying,
     isLiked,
     hasVideo,
     isVideoActive,

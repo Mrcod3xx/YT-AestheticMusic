@@ -124,6 +124,39 @@
   animation: lyricsStageEnter 0.28s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
+/* Spinning turntable vinyl disc */
+@keyframes vinylSpin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-vinyl-spin {
+  animation: vinylSpin 9s linear infinite;
+  will-change: transform;
+}
+
+/* GPU-light floating ambient dust / twilight bokeh particles */
+@keyframes ambientParticleFloat {
+  0%,
+  100% {
+    transform: translate3d(0px, 0px, 0px) scale(0.95);
+    opacity: var(--p-opacity-min, 0.22);
+  }
+  50% {
+    transform: translate3d(var(--p-dx, 14px), var(--p-dy, -24px), 0px) scale(1.06);
+    opacity: var(--p-opacity-max, 0.62);
+  }
+}
+
+.animate-particle-float {
+  animation: ambientParticleFloat var(--p-dur, 18s) ease-in-out var(--p-delay, 0s) infinite;
+  will-change: transform, opacity;
+}
+
 /* Pause ambient & visualizer CSS animations when tab is hidden */
 .aesthetic-viewport[data-tab-hidden="true"] *,
 .aesthetic-viewport[data-tab-hidden="true"] *::before,

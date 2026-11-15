@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { AestheticSettings, TrackMetadata } from '../../../shared/types';
+import { AestheticSettings, ThemePreset, TrackMetadata } from '../../../shared/types';
 import {
   clearCustomWallpaper,
   loadCustomWallpaper,
@@ -19,6 +19,43 @@ interface AmbientPalette {
   primary: string;
   secondary: string;
 }
+
+interface AmbientParticleSpec {
+  id: number;
+  xPct: number;
+  yPct: number;
+  dustSizePx: number;
+  bokehSizePx: number;
+  dxPx: number;
+  dyPx: number;
+  durSec: number;
+  delaySec: number;
+  warm: boolean;
+}
+
+const PARTICLE_SPECS: readonly AmbientParticleSpec[] = Array.from(
+  { length: 20 },
+  (_, idx) => ({
+    id: idx,
+    xPct: ((idx * 37 + 11) % 92) + 4,
+    yPct: ((idx * 53 + 17) % 86) + 6,
+    dustSizePx: 2 + (idx % 3),
+    bokehSizePx: 28 + ((idx * 13) % 44),
+    dxPx: ((idx % 2 === 0 ? 1 : -1) * (10 + ((idx * 7) % 18))),
+    dyPx: -(16 + ((idx * 9) % 24)),
+    durSec: 12 + (idx % 7) * 2.5,
+    delaySec: -((idx * 1.9) % 14),
+    warm: idx % 3 !== 0,
+  })
+);
+
+const THEME_OVERLAY_RGB: Partial<Record<ThemePreset, string>> = {
+  'cozy-room': '14, 9, 6',
+  'minimal-dark': '6, 6, 8',
+  'velvet-noir': '16, 8, 13',
+  'midnight-ocean': '5, 11, 18',
+  'sakura-haze': '15, 10, 17',
+};
 
 function getThemeFallbackPalette(theme: AestheticSettings['theme']): AmbientPalette {
   const def = THEME_DEFINITIONS[theme] || THEME_DEFINITIONS['night-city'];
@@ -399,12 +436,9 @@ export const BackgroundEngine: React.FC<BackgroundEngineProps> = ({
       <div
         className="absolute inset-0 transition-colors duration-500"
         style={{
-          backgroundColor:
-            settings.theme === 'cozy-room'
-              ? `rgba(14, 9, 6, ${darknessAlpha})`
-              : settings.theme === 'minimal-dark'
-              ? `rgba(6, 6, 8, ${darknessAlpha})`
-              : `rgba(5, 6, 9, ${darknessAlpha})`,
+          backgroundColor: `rgba(${
+            THEME_OVERLAY_RGB[settings.theme] ?? '5, 6, 9'
+          }, ${darknessAlpha})`,
         }}
       />
 
@@ -428,6 +462,53 @@ export const BackgroundEngine: React.FC<BackgroundEngineProps> = ({
           }}
         />
       )}
+
+      {/* LAYER 6: Optional GPU-Light Ambient Dust / Twilight Bokeh Particles */}
+      {settings.ambientParticles !== 'none' &&
+        !settings.lowGpuMode &&
+        !settings.reducedMotion &&
+        !paused &&
+        settings.backgroundMode !== 'off' && (
+          <div aria-hidden="true" className="absolute inset-0 overflow-hidden">
+            {PARTICLE_SPECS.map((p) => {
+              const isBokeh = settings.ambientParticles === 'bokeh';
+              const size = isBokeh ? p.bokehSizePx : p.dustSizePx;
+              const speedFactor = Math.max(0.4, Math.min(2, settings.animationSpeed || 1));
+              const duration = Math.round((p.durSec / speedFactor) * 10) / 10;
+              const themeAccent =
+                (THEME_DEFINITIONS[settings.theme] || THEME_DEFINITIONS['night-city'])
+                  .accentHighlight;
+
+              return (
+                <span
+                  key={p.id}
+                  className="absolute rounded-full animate-particle-float"
+                  style={
+                    {
+                      left: `${p.xPct}%`,
+                      top: `${p.yPct}%`,
+                      width: `${size}px`,
+                      height: `${size}px`,
+                      background: isBokeh
+                        ? `radial-gradient(circle, ${
+                            p.warm ? themeAccent : 'rgba(255,255,255,0.85)'
+                          } 0%, transparent 72%)`
+                        : `radial-gradient(circle, ${
+                            p.warm ? themeAccent : 'rgba(255,248,236,0.95)'
+                          } 0%, transparent 78%)`,
+                      '--p-dx': `${p.dxPx}px`,
+                      '--p-dy': `${p.dyPx}px`,
+                      '--p-dur': `${duration}s`,
+                      '--p-delay': `${p.delaySec}s`,
+                      '--p-opacity-min': isBokeh ? '0.07' : '0.18',
+                      '--p-opacity-max': isBokeh ? '0.20' : '0.58',
+                    } as React.CSSProperties
+                  }
+                />
+              );
+            })}
+          </div>
+        )}
     </div>
   );
 };

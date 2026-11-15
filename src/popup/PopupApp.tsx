@@ -17,12 +17,14 @@ import {
 } from 'lucide-react';
 import {
   AestheticSettings,
+  AmbientParticles,
   BackgroundMode,
+  StageStyle,
   ThemePreset,
   YTMStatusResponse,
 } from '../shared/types';
 import { DEFAULT_SETTINGS } from '../shared/defaultSettings';
-import { THEME_DEFINITIONS } from '../shared/themeTokens';
+import { ALL_THEME_ORDER, THEME_DEFINITIONS } from '../shared/themeTokens';
 import { EXTENSION_VERSION } from '../shared/version';
 import { clearCustomWallpaper } from '../shared/wallpaperStore';
 import {
@@ -122,7 +124,7 @@ export const PopupApp: React.FC = () => {
     { id: 'off', label: 'Minimal Off', icon: <EyeOff className="w-3.5 h-3.5" /> },
   ];
 
-  const themeOrder: ThemePreset[] = ['night-city', 'minimal-dark', 'cozy-room', 'custom'];
+  const themeOrder = ALL_THEME_ORDER;
 
   return (
     <div className="p-4 flex flex-col gap-4 bg-[#0d0d11] text-zinc-100 select-none">
@@ -247,6 +249,8 @@ export const PopupApp: React.FC = () => {
                 key={id}
                 onClick={() => handleThemeChange(id)}
                 className={`flex items-center gap-2 px-3 py-2.5 rounded-xl text-[12.5px] font-medium border transition ${
+                  id === 'custom' ? 'col-span-2' : ''
+                } ${
                   active
                     ? 'bg-white/[0.09] border-[#C28356]/60 text-white'
                     : 'bg-white/[0.03] border-white/5 text-zinc-400 hover:bg-white/[0.06] hover:text-zinc-200'
@@ -308,6 +312,60 @@ export const PopupApp: React.FC = () => {
         </div>
 
         <div className="space-y-2 pt-1">
+          <div className="grid grid-cols-2 gap-2 pb-1">
+            <div className="space-y-1">
+              <span className="text-[11px] text-zinc-400">Center Stage</span>
+              <div className="grid grid-cols-3 gap-1 bg-white/[0.03] border border-white/10 rounded-xl p-1">
+                {(
+                  [
+                    { id: 'carousel', label: '3D' },
+                    { id: 'vinyl', label: 'Vinyl' },
+                    { id: 'minimal', label: 'Min' },
+                  ] as { id: StageStyle; label: string }[]
+                ).map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => handleUpdateSetting({ stageStyle: s.id })}
+                    className={`py-1 rounded-lg text-[11px] font-medium transition ${
+                      settings.stageStyle === s.id
+                        ? 'bg-[#C28356]/25 text-white border border-[#C28356]/50'
+                        : 'text-zinc-400 hover:text-zinc-200'
+                    }`}
+                  >
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <span className="text-[11px] text-zinc-400">Particles</span>
+              <div className="grid grid-cols-3 gap-1 bg-white/[0.03] border border-white/10 rounded-xl p-1">
+                {(
+                  [
+                    { id: 'none', label: 'Off' },
+                    { id: 'dust', label: 'Dust' },
+                    { id: 'bokeh', label: 'Bokeh' },
+                  ] as { id: AmbientParticles; label: string }[]
+                ).map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => handleUpdateSetting({ ambientParticles: p.id })}
+                    className={`py-1 rounded-lg text-[11px] font-medium transition ${
+                      settings.ambientParticles === p.id
+                        ? 'bg-[#C28356]/25 text-white border border-[#C28356]/50'
+                        : 'text-zinc-400 hover:text-zinc-200'
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
           <div className="flex items-center justify-between text-xs">
             <span className="text-zinc-400">Darkness Overlay</span>
             <span className="text-zinc-300 font-mono text-[11px]">{settings.darknessOverlay}%</span>

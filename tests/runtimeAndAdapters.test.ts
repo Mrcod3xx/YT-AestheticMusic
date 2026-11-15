@@ -3,6 +3,12 @@ import {
   isExtensionContextInvalidatedError,
   shouldShieldKeyboardTarget,
 } from '../src/shared/runtimeSafety';
+import { DEFAULT_SETTINGS } from '../src/shared/defaultSettings';
+import {
+  createSettingsExportPayload,
+  parseAndSanitizeImportedSettings,
+  SETTINGS_EXPORT_FORMAT,
+} from '../src/shared/storage';
 import { upgradeArtworkUrl } from '../src/content/adapters/playerAdapter';
 import { isCacheableUnavailableOutcome } from '../src/content/adapters/lyricsAdapter';
 
@@ -59,5 +65,73 @@ describe('runtimeSafety & adapter helpers', () => {
     expect(isCacheableUnavailableOutcome(undefined, true, false)).toBe(false);
     expect(isCacheableUnavailableOutcome(true, false, false)).toBe(true);
     expect(isCacheableUnavailableOutcome(false, false, true)).toBe(true);
+  });
+
+  it('creates portable settings exports and validates/clamps imported JSON payloads', () => {
+    const exported = createSettingsExportPayload({
+      ...DEFAULT_SETTINGS,
+      theme: 'custom',
+      backgroundMode: 'custom',
+      customBackgroundType: 'image',
+      customBackgroundName: 'secret-wall.png',
+      customWallpaperVersion: 123456,
+    });
+
+    expect(exported.format).toBe(SETTINGS_EXPORT_FORMAT);
+    expect(exported.settings.backgroundMode).toBe('auto');
+    expect(exported.settings.customBackgroundType).toBe('none');
+    expect(exported.settings.customBackgroundName).toBe('');
+    expect(exported.settings.customWallpaperVersion).toBe(0);
+
+    const sanitized = parseAndSanitizeImportedSettings({
+      format: SETTINGS_EXPORT_FORMAT,
+      settings: {
+        enabled: false,
+        clockFontSize: 999,
+        panelTransparency: -20,
+        animationSpeed: 10,
+        theme: 'velvet-noir',
+        stageStyle: 'vinyl',
+        ambientParticles: 'bokeh',
+        showMiniLyricLine: true,
+        backgroundMode: 'custom',
+        fontFamily: 'mono',
+        accentColor: '#c28356',
+        clockColor: 'not-a-hex',
+        lyricsFontSize: 'invalid-size',
+      },
+    });
+
+    expect(sanitized.enabled).toBe(false);
+    expect(sanitized.clockFontSize).toBe(140);
+    expect(sanitized.panelTransparency).toBe(25);
+    expect(sanitized.animationSpeed).toBe(2.0);
+    expect(sanitized.theme).toBe('velvet-noir');
+    expect(sanitized.stageStyle).toBe('vinyl');
+    expect(sanitized.ambientParticles).toBe('bokeh');
+    expect(sanitized.showMiniLyricLine).toBe(true);
+    expect(sanitized.backgroundMode).toBe('auto');
+    expect(sanitized.fontFamily).toBe('mono');
+    expect(sanitized.accentColor).toBe('#C28356');
+    expect(sanitized.clockColor).toBeUndefined();
+    expect(sanitized.lyricsFontSize).toBeUndefined();
+
+    const rejectedEnums = parseAndSanitizeImportedSettings({
+      format: SETTINGS_EXPORT_FORMAT,
+      settings: {
+        enabled: true,
+        stageStyle: 'hologram',
+        ambientParticles: 'fireworks',
+        theme: 'unknown-theme',
+      },
+    });
+    expect(rejectedEnums.enabled).toBe(true);
+    expect(rejectedEnums.stageStyle).toBeUndefined();
+    expect(rejectedEnums.ambientParticles).toBeUndefined();
+    expect(rejectedEnums.theme).toBeUndefined();
+
+    expect(() => parseAndSanitizeImportedSettings({ format: 'wrong-app', settings: {} })).toThrow();
+    expect(() => parseAndSanitizeImportedSettings({})).toThrow();
+    expect(() => parseAndSanitizeImportedSettings([])).toThrow();
   });
 });

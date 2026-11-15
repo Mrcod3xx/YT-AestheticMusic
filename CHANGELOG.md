@@ -11,6 +11,54 @@ Use `npm run version:bump -- <patch|minor|major|x.y.z>` after implementing and v
 
 ---
 
+## [0.5.1] - 2026-11-15 — Vinyl Rotation Visibility, Brave Session Auth, Liked Songs & Playlist Contents
+
+### Fixed
+- **Spinning Vinyl Showcase Visibility & Playback Sync (`AlbumCarousel3D.tsx`, `shadow.css`, `playerAdapter.ts`)**:
+  - Removed negative stacking (`zIndex: -1`) that hid the vinyl disc behind the backdrop-filtered center cover sleeve and set explicit platter (`zIndex: 1`) vs sleeve (`zIndex: 2`) stacking order with `overflow-visible`.
+  - Extended the turntable platter (`left-[168px]`, `266px` diameter; sleeve offset `translate3d(-72px, 0px, 95px)`) so both the grooved disc and center artwork label emerge prominently past the sleeve edge and rotated the entire grooved platter + asymmetric groove sheen arcs + center label together at `9s linear infinite`, synced to live playback state (`running` / `paused`).
+  - Hardened `readLiveTrackMetadata()` playback detection in `playerAdapter.ts` with multi-selector `<video>` lookup and `#play-pause-button` fallback so play/pause transitions always keep the vinyl and UI synchronized.
+- **Authenticated YouTube Music Session Detection & Library Retrieval (`innertubeAuth.ts`, `mainWorldBridge.ts`)**:
+  - Added `SAPISIDHASH` / `SAPISID1PHASH` / `SAPISID3PHASH` request signing (`computeSapisidHash`, `buildSapisidAuthorizationHeader`), `X-Origin`, `X-Goog-AuthUser` (`SESSION_INDEX`), `X-Goog-PageId` (`DELEGATED_SESSION_ID`), `X-Goog-Visitor-Id`, and `X-Youtube-Bootstrap-Logged-In` headers plus `credentials: 'include'` on InnerTube `/youtubei/v1/browse` and `/search` requests so Brave's existing signed-in session authenticates properly.
+  - Added multi-signal session detection (`detectYtmSessionState` combining `ytcfg`, auth tokens/cookies, and `<ytmusic-nav-bar>` DOM state) and passed `{ ok, loggedIn, hasAuthCookies, items, error }` through `searchAdapter.ts` -> `index.tsx` -> `AestheticApp.tsx` -> `SearchBarOverlay.tsx` so signed-in sessions no longer falsely display `"Sign in to YouTube Music"`.
+  - Added fallback playlist discovery (`FEmusic_liked_playlists` -> `FEmusic_library_landing`), fallback liked-songs extraction (`parseBrowseDetails`), and bare playlist ID normalization (`normalizeBrowseIdForRequest`, e.g., `PL...` -> `VLPL...`).
+- **Playlist Tracks & Liked Songs UI (`innertubeParsers.ts`, `SearchBarOverlay.tsx`)**:
+  - Updated `parseBrowseDetails()`, `extractTracksFromBrowseShelf()`, and `findHeaderRenderer()` to flatten nested `itemSectionRenderer.contents` wrappers returned by `twoColumnBrowseResultsRenderer` playlists and `musicEditablePlaylistDetailHeaderRenderer` headers, and added fallback `playlistVideoRenderer` & `playlistItemData.videoId` extraction while filtering `"New playlist"` action cards (`createPlaylistEndpoint`).
+  - Upgraded `SearchBarOverlay.tsx` so **Playlists** opens a split view that automatically loads and displays the selected playlist's **actual tracks** inline (with `Play`, `Shuffle`, `Full View`, and per-track Play / Play Next / Queue controls), and **Liked Songs** renders a direct numbered tracklist with `Play All`, `Open All`, Play Next, and Queue controls.
+
+## [0.5.0] - 2026-11-15 — Vinyl Showcase, Library Hub, Studio Worlds & Mini Lyrics
+
+### Added
+- **In-App Library & Quick Picks Hub (`SearchBarOverlay.tsx`, `innertubeParsers.ts`, `mainWorldBridge.ts`, `searchAdapter.ts`)**:
+  - Added empty-focus quick hub chips (**Liked Songs**, **Playlists**, **Quick Picks**) backed by authenticated InnerTube `/youtubei/v1/browse` (`FEmusic_liked_videos`, `FEmusic_liked_playlists`, `FEmusic_home`), allowing immediate playback, queueing, or opening full playlist/liked tracklists inside `BrowseDetailsModal`.
+- **Spinning Vinyl Showcase + Carousel Swipe/Wheel Navigation (`AlbumCarousel3D.tsx`, `shadow.css`, `InAppSettingsPopover.tsx`)**:
+  - Added `stageStyle` (`carousel` / `vinyl` / `minimal`) to settings, featuring a realistic grooved vinyl record disc emerging from the frosted center cover sleeve synced cleanly to play/pause and `reducedMotion`.
+  - Added smooth throttled mouse-wheel and horizontal pointer-swipe queue browsing (`previewDelta`) that previews tracks safely without interrupting playback until clicked.
+- **3 New Studio Worlds & Ambient Particles (`themeTokens.ts`, `defaultSettings.ts`, `BackgroundEngine.tsx`)**:
+  - Added **Velvet Noir**, **Midnight Ocean**, and **Sakura Haze** studio theme presets across `PopupApp`, `OptionsApp`, `InAppSettingsPopover`, and `T` theme cycling via canonical `STUDIO_THEME_ORDER` / `ALL_THEME_ORDER`.
+  - Added optional GPU-light `ambientParticles` (`none` / `dust` / `bokeh`) layer in `BackgroundEngine`, paused automatically when tab-hidden, `reducedMotion`, `lowGpuMode`, or `backgroundMode === 'off'`.
+- **Mini 1-Line Lyric Subtitle, Song Radio & Queue Filter (`AestheticApp.tsx`, `ContinuePlayingSidebar.tsx`, `storage.ts`)**:
+  - Added optional `showMiniLyricLine` frosted subtitle pill above the search/player dock when the main Lyrics stage is closed.
+  - Added inline Queue Search Filter (`Search` toggle) and one-click **Start Song Radio** (`RDAMVM<videoId>`) on active and upcoming queue items in `ContinuePlayingSidebar`.
+
+## [0.4.0] - 2026-11-15 — Keyboard Shortcuts, Player Polish, Lyrics Timing Offset & Settings Backup
+
+### Added
+- **Global Keyboard Shortcuts & Help Modal (`keyboardShortcuts.ts`, `ShortcutsModal.tsx`, `AestheticApp.tsx`)**:
+  - Added single-key and modified shortcuts in Shadow DOM (`Space` play/pause, `/` or `Ctrl/Cmd+K` search, `L` lyrics toggle, `Shift+L` lyrics view cycle, `E` Zen/Lyrics-Only toggle, `S` sidebar toggle, `M` mute, `Left/Right` previous/next track, `?` shortcut help modal), cleanly shielded whenever typing inside inputs, textareas, or `contenteditable` targets.
+  - Added `ShortcutsModal` accessible from `?` or the new keyboard button in `InAppSettingsPopover`.
+- **Layered `Escape` & Outside-Click Dismiss (`AestheticApp.tsx`, `InAppSettingsPopover.tsx`)**:
+  - `Escape` dismisses overlays from topmost to base: `SettingsPopover` -> `ShortcutsModal` -> `BrowseDetailsModal` -> `SearchDropdown` -> `ZenMode` / `LyricsOnly`.
+  - Clicking outside `InAppSettingsPopover` dismisses it via Shadow-DOM-safe `composedPath()` detection.
+- **Player, Sidebar & Status HUD Polish (`FloatingPlayerBar.tsx`, `ContinuePlayingSidebar.tsx`, `AestheticApp.tsx`)**:
+  - Added a hover seek timestamp preview pill on the progress bar, eliminated the hover gap on the vertical volume popover, and added mouse-wheel volume stepping (`±4%`).
+  - Made the `"Continue Playing"` sidebar queue header collapsible while keeping the active pop-out card pinned, and added a `"Radio"` pill badge on automix (`isAutomix`) queue items.
+  - Added a `1.6s` top-right transient status HUD pill for shortcut, theme, background mode, and Eye toggles.
+- **Synced Lyrics Timing Offset, Copy Lyrics & Settings JSON Backup (`lyricsParser.ts`, `InAppSettingsPopover.tsx`, `storage.ts`, `OptionsApp.tsx`)**:
+  - Added `-0.5s` / offset / `+0.5s` lyric sync timing adjustments (clamped `±10s`, resettable) and one-click `Copy Current Track Lyrics` inside Studio Controls (`InAppSettingsPopover` -> `UI & Lyrics`) to keep the lyrics canvas clean.
+  - Added `Export JSON` and `Import JSON` studio settings backup in `OptionsApp.tsx` backed by strict type/range sanitization in `parseAndSanitizeImportedSettings`.
+  - Added unit test coverage in `tests/keyboardShortcuts.test.ts`, `tests/lyricsParser.test.ts`, and `tests/runtimeAndAdapters.test.ts`.
+
 ## [0.3.1] - 2026-11-15 — Laptop-Friendly Ergonomic Button & Hit-Target Upgrade
 
 ### Changed

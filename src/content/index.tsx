@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { AestheticApp, AestheticAppActions } from './components/AestheticApp';
+import type { SearchResultItem } from './components/search/SearchBarOverlay';
 import {
   AestheticSettings,
   ExtensionMessage,
@@ -40,9 +41,11 @@ import {
 import {
   addBrowseTrackToQueue,
   fetchBrowseDetails,
+  fetchLibraryHub,
   playBrowseCollection,
   playBrowseTrack,
   searchYouTubeMusic,
+  startSongRadio,
 } from './adapters/searchAdapter';
 import { syncNativeVideoModePreference } from './adapters/videoAdapter';
 import shadowStyles from './styles/shadow.css?inline';
@@ -113,6 +116,24 @@ function scheduleQueueRefresh(delayMs = 220) {
       scheduleRender();
     }
   }, delayMs);
+}
+
+function bindSearchItemCallbacks(items: SearchResultItem[]): SearchResultItem[] {
+  return items.map((item) => ({
+    ...item,
+    onSelect: () => {
+      item.onSelect();
+      setTimeout(scheduleRender, 250);
+      scheduleQueueRefresh(650);
+    },
+    onAddToQueue: item.onAddToQueue
+      ? async (playNext = false) => {
+          const ok = await item.onAddToQueue!(playNext);
+          scheduleQueueRefresh(200);
+          return Boolean(ok);
+        }
+      : undefined,
+  }));
 }
 
 const appActions: AestheticAppActions = {
@@ -198,21 +219,25 @@ const appActions: AestheticAppActions = {
       cachedQueue = nextQueue;
       scheduleRender();
     });
-    return results.map((item) => ({
-      ...item,
-      onSelect: () => {
-        item.onSelect();
-        setTimeout(scheduleRender, 250);
-        scheduleQueueRefresh(650);
-      },
-      onAddToQueue: item.onAddToQueue
-        ? async (playNext = false) => {
-            const ok = await item.onAddToQueue!(playNext);
-            scheduleQueueRefresh(200);
-            return Boolean(ok);
-          }
-        : undefined,
-    }));
+    return bindSearchItemCallbacks(results);
+  },
+  onFetchLibraryHub: async (section) => {
+    const response = await fetchLibraryHub(section, (nextQueue) => {
+      cachedQueue = nextQueue;
+      scheduleRender();
+    });
+    return {
+      ...response,
+      items: bindSearchItemCallbacks(response.items),
+    };
+  },
+  onStartSongRadio: async (videoId: string) => {
+    const ok = await startSongRadio(videoId);
+    if (ok) {
+      setTimeout(scheduleRender, 250);
+      scheduleQueueRefresh(650);
+    }
+    return ok;
   },
   onFetchBrowseDetails: (browseId, kind) => fetchBrowseDetails(browseId, kind),
   onPlayBrowseCollection: async (params) => {

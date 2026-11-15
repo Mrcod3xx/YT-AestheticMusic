@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_SETTINGS, THEME_PRESETS } from '../src/shared/defaultSettings';
 import {
+  ALL_THEME_ORDER,
   getThemeTokens,
   hexToRgbTuple,
   resolveClockFontFamilyCss,
   resolveFontFamilyCss,
+  STUDIO_THEME_ORDER,
   THEME_DEFINITIONS,
 } from '../src/shared/themeTokens';
 
@@ -61,5 +63,23 @@ describe('themeTokens & defaults', () => {
       expect(THEME_PRESETS[preset]).toBeDefined();
       expect(THEME_PRESETS[preset].theme).toBe(preset);
     }
+
+    expect(STUDIO_THEME_ORDER).toEqual([
+      'night-city',
+      'minimal-dark',
+      'cozy-room',
+      'velvet-noir',
+      'midnight-ocean',
+      'sakura-haze',
+    ]);
+    expect(ALL_THEME_ORDER).toEqual([...STUDIO_THEME_ORDER, 'custom']);
+
+    const sakuraTokens = getThemeTokens({
+      ...DEFAULT_SETTINGS,
+      theme: 'sakura-haze',
+      accentColor: THEME_DEFINITIONS['sakura-haze'].accent,
+    });
+    expect(sakuraTokens.def.label).toBe('Sakura Haze');
+    expect(sakuraTokens.accent).toBe('#D89AA8');
   });
 });
