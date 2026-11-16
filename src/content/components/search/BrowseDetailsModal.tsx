@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  ArrowLeft,
+  BookmarkPlus,
   Check,
   Disc,
   ListPlus,
@@ -7,10 +9,12 @@ import {
   Loader2,
   Play,
   Shuffle,
+  User,
   X,
 } from 'lucide-react';
 import {
   BrowseDetailsData,
+  BrowseShelfItem,
   BrowseTarget,
   BrowseTrackItem,
   TrackMetadata,
@@ -23,11 +27,20 @@ interface BrowseDetailsModalProps {
   error: string | null;
   activeTrack: TrackMetadata;
   borderRadius: number;
+  canGoBack?: boolean;
+  onBack?: () => void;
+  onOpenTarget?: (target: BrowseTarget) => void;
   onClose: () => void;
   onRetry: () => void;
   onPlayCollection: (shuffle: boolean) => void;
   onPlayTrack: (track: BrowseTrackItem) => void;
   onQueueTrack: (track: BrowseTrackItem, playNext: boolean) => Promise<boolean>;
+  onSaveTrackToPlaylist?: (track: {
+    title: string;
+    artist: string;
+    artworkUrl?: string;
+    videoId: string;
+  }) => void;
 }
 
 function normalizeMatchText(val?: string): string {
@@ -44,11 +57,15 @@ export const BrowseDetailsModal: React.FC<BrowseDetailsModalProps> = ({
   error,
   activeTrack,
   borderRadius,
+  canGoBack = false,
+  onBack,
+  onOpenTarget,
   onClose,
   onRetry,
   onPlayCollection,
   onPlayTrack,
   onQueueTrack,
+  onSaveTrackToPlaylist,
 }) => {
   const [queuedFeedback, setQueuedFeedback] = useState<
     Record<string, 'queue' | 'next'>
@@ -83,6 +100,8 @@ export const BrowseDetailsModal: React.FC<BrowseDetailsModalProps> = ({
   const summaryText =
     details?.description || details?.subtitle || target.previewSubtitle || '';
   const tracks = details?.tracks || [];
+  const shelves = details?.shelves || [];
+  const hasAnyContent = tracks.length > 0 || shelves.length > 0;
   const tracksHeading =
     details?.tracksHeading ||
     (kind === 'Artist'
@@ -90,6 +109,37 @@ export const BrowseDetailsModal: React.FC<BrowseDetailsModalProps> = ({
       : kind === 'Playlist'
       ? 'Playlist Tracks'
       : 'Tracks');
+
+  const handleShelfItemClick = (item: BrowseShelfItem) => {
+    if (item.browseId && item.kind !== 'Video' && onOpenTarget) {
+      onOpenTarget({
+        browseId: item.browseId,
+        params: item.params,
+        kind:
+          item.kind === 'Artist' || item.kind === 'Playlist'
+            ? item.kind
+            : 'Album',
+        previewTitle: item.title,
+        previewSubtitle: item.subtitle,
+        previewArtworkUrl: item.artworkUrl,
+      });
+      return;
+    }
+
+    if (item.videoId || item.watchEndpoint || item.playlistId) {
+      onPlayTrack({
+        id: item.id,
+        index: 0,
+        title: item.title,
+        subtitle: item.subtitle,
+        duration: '',
+        artworkUrl: item.artworkUrl,
+        videoId: item.videoId,
+        playlistId: item.playlistId,
+        watchEndpoint: item.watchEndpoint,
+      });
+    }
+  };
 
   const activeTitleNorm = normalizeMatchText(activeTrack.title);
   const canStartPlayback = Boolean(
@@ -140,16 +190,29 @@ export const BrowseDetailsModal: React.FC<BrowseDetailsModalProps> = ({
           '0 34px 90px rgba(0, 0, 0, 0.82), inset 0 1px 0 rgba(255, 255, 255, 0.14)',
       }}
     >
-      {/* Close Button */}
-      <button
-        type="button"
-        onClick={onClose}
-        title="Return to search results (Esc)"
-        aria-label="Close details"
-        className="absolute top-4 right-4 z-20 w-10 h-10 rounded-full flex items-center justify-center bg-white/[0.08] hover:bg-white/[0.18] text-zinc-300 hover:text-white border border-white/10 transition cursor-pointer"
-      >
-        <X className="w-5 h-5" />
-      </button>
+      {/* Back & Close Controls */}
+      <div className="absolute top-4 right-4 z-20 flex items-center gap-2">
+        {canGoBack && onBack && (
+          <button
+            type="button"
+            onClick={onBack}
+            title="Go back"
+            className="h-10 px-3.5 rounded-full flex items-center gap-1.5 bg-white/[0.08] hover:bg-white/[0.18] text-zinc-200 hover:text-white border border-white/10 text-[12px] font-medium transition cursor-pointer"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>Back</span>
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={onClose}
+          title="Return to search results (Esc)"
+          aria-label="Close details"
+          className="w-10 h-10 rounded-full flex items-center justify-center bg-white/[0.08] hover:bg-white/[0.18] text-zinc-300 hover:text-white border border-white/10 transition cursor-pointer"
+        >
+          <X className="w-5 h-5" />
+        </button>
+      </div>
 
       <div className="flex-1 min-h-0 flex flex-col md:flex-row gap-6 p-6">
         {/* Left Column: Entity Artwork, Info & Play / Shuffle */}
@@ -209,12 +272,12 @@ export const BrowseDetailsModal: React.FC<BrowseDetailsModalProps> = ({
           </div>
         </div>
 
-        {/* Right Column: Top Songs / Album Tracks / Playlist Tracks */}
+        {/* Right Column: Top Songs / Album Tracks / Discography Shelves */}
         <div className="flex-1 min-w-0 min-h-0 flex flex-col">
-          <div className="flex items-center justify-between pr-12 pb-2.5">
+          <div className={`flex items-center justify-between pb-2.5 ${canGoBack ? 'pr-32' : 'pr-12'}`}>
             <div className="flex items-center gap-2.5">
               <h3 className="text-[15px] font-semibold text-white/95 tracking-tight">
-                {tracksHeading}
+                {tracks.length === 0 && shelves.length > 0 ? shelves[0].title : tracksHeading}
               </h3>
               {loading && (
                 <Loader2 className="w-3.5 h-3.5 animate-spin text-[var(--aesthetic-accent,#E89B63)]" />
@@ -228,12 +291,12 @@ export const BrowseDetailsModal: React.FC<BrowseDetailsModalProps> = ({
           </div>
 
           <div className="flex-1 min-h-0 overflow-y-auto pr-1.5 space-y-1 custom-queue-scroll">
-            {loading && tracks.length === 0 ? (
+            {loading && !hasAnyContent ? (
               <div className="h-full flex flex-col items-center justify-center gap-2.5 text-zinc-300/80 py-10">
                 <Loader2 className="w-6 h-6 animate-spin text-[var(--aesthetic-accent,#E89B63)]" />
                 <span className="text-[13px]">Loading {kind.toLowerCase()} details...</span>
               </div>
-            ) : error && tracks.length === 0 ? (
+            ) : error && !hasAnyContent ? (
               <div className="h-full flex flex-col items-center justify-center gap-3 text-center py-10 px-4">
                 <p className="text-[13px] text-zinc-300/85">{error}</p>
                 <button
@@ -244,12 +307,13 @@ export const BrowseDetailsModal: React.FC<BrowseDetailsModalProps> = ({
                   Retry
                 </button>
               </div>
-            ) : tracks.length === 0 ? (
+            ) : !hasAnyContent ? (
               <div className="h-full flex items-center justify-center text-[13px] text-zinc-400 py-10">
                 No tracks found for this {kind.toLowerCase()}.
               </div>
             ) : (
-              tracks.map((track) => {
+              <>
+                {tracks.map((track) => {
                 const isActive =
                   track.videoId && activeTrack.videoId
                     ? track.videoId === activeTrack.videoId
@@ -383,6 +447,28 @@ export const BrowseDetailsModal: React.FC<BrowseDetailsModalProps> = ({
                               <ListPlus className="w-4 h-4" />
                             )}
                           </button>
+                          {onSaveTrackToPlaylist && track.videoId && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onSaveTrackToPlaylist({
+                                  title: track.title,
+                                  artist: track.artist || track.subtitle || details?.title || 'YouTube Music',
+                                  artworkUrl: track.artworkUrl || details?.artworkUrl,
+                                  videoId: track.videoId!,
+                                });
+                              }}
+                              title="Save to playlist"
+                              className={`w-9 h-9 rounded-full border flex items-center justify-center transition cursor-pointer ${
+                                isActive
+                                  ? 'bg-black/15 hover:bg-black/25 border-black/20 text-zinc-900'
+                                  : 'bg-white/[0.08] hover:bg-white/[0.18] border-white/15 text-zinc-200'
+                              }`}
+                            >
+                              <BookmarkPlus className="w-4 h-4" />
+                            </button>
+                          )}
                         </div>
                       )}
 
@@ -398,7 +484,65 @@ export const BrowseDetailsModal: React.FC<BrowseDetailsModalProps> = ({
                     </div>
                   </div>
                 );
-              })
+                })}
+
+                {/* Horizontal Artist Discography / Similar Artists / Explore Shelves */}
+                {shelves.length > 0 && (
+                  <div className={`space-y-4 ${tracks.length > 0 ? 'pt-4 mt-3 border-t border-white/10' : 'pt-1'}`}>
+                    {shelves.map((shelf, sIdx) => (
+                      <section key={`${shelf.title}-${sIdx}`} className="space-y-2">
+                        {(tracks.length > 0 || sIdx > 0) && (
+                          <h4 className="text-[12.5px] font-semibold uppercase tracking-wider text-zinc-400 px-1">
+                            {shelf.title}
+                          </h4>
+                        )}
+                        <div className="flex gap-2.5 overflow-x-auto pb-2 custom-queue-scroll">
+                          {shelf.items.map((item) => (
+                            <button
+                              key={item.id}
+                              type="button"
+                              onClick={() => handleShelfItemClick(item)}
+                              className="w-[114px] shrink-0 group text-left rounded-xl p-1.5 bg-white/[0.03] hover:bg-white/[0.09] border border-white/10 transition cursor-pointer"
+                            >
+                              <div
+                                className={`relative w-full aspect-square overflow-hidden bg-zinc-800 border border-white/10 ${
+                                  item.kind === 'Artist' ? 'rounded-full' : 'rounded-lg'
+                                }`}
+                              >
+                                {item.artworkUrl ? (
+                                  <img
+                                    src={item.artworkUrl}
+                                    alt={item.title}
+                                    className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                                    draggable={false}
+                                  />
+                                ) : (
+                                  <div className="w-full h-full flex items-center justify-center text-zinc-500">
+                                    {item.kind === 'Artist' ? (
+                                      <User className="w-6 h-6" />
+                                    ) : (
+                                      <Disc className="w-6 h-6" />
+                                    )}
+                                  </div>
+                                )}
+                                <div className="absolute inset-0 bg-black/35 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                                  <Play className="w-4 h-4 text-white fill-white" />
+                                </div>
+                              </div>
+                              <div className="mt-1.5 text-[11.5px] font-semibold text-white truncate">
+                                {item.title}
+                              </div>
+                              <div className="text-[10.5px] text-zinc-400 truncate">
+                                {item.subtitle}
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      </section>
+                    ))}
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>

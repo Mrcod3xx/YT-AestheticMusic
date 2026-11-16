@@ -1,8 +1,10 @@
 import { RawBridgeSearchResult } from '../../shared/innertubeParsers';
+import { loadListeningHistory } from '../../shared/listeningHistory';
 import {
   BrowseDetailsData,
   BrowseTrackItem,
   LibraryHubSection,
+  PlaylistMembershipOption,
   QueueTrackItem,
 } from '../../shared/types';
 import { SearchResultItem } from '../components/search/SearchBarOverlay';
@@ -63,6 +65,7 @@ function mapRawSearchResult(
     category: item.category,
     artworkUrl: item.artworkUrl,
     browseId: item.browseId,
+    params: item.params,
     videoId: item.videoId,
     playlistId: item.playlistId,
     isTopResult: item.isTopResult,
@@ -114,6 +117,29 @@ export async function fetchLibraryHub(
   section: LibraryHubSection,
   onQueueUpdate?: (queue: QueueTrackItem[]) => void
 ): Promise<LibraryHubResponse> {
+  if (section === 'history') {
+    const historyItems = await loadListeningHistory();
+    const mappedRaw: RawBridgeSearchResult[] = historyItems.map((entry, idx) => ({
+      id: `hist-${entry.id}`,
+      searchIndex: idx,
+      title: entry.title,
+      subtitle: entry.album
+        ? `${entry.artist} • ${entry.album}`
+        : `${entry.artist} • Played ${entry.playCount}×`,
+      category: 'Song',
+      artworkUrl: entry.artworkUrl,
+      videoId: entry.videoId,
+      playlistId: entry.videoId ? `RDAMVM${entry.videoId}` : undefined,
+      shelfTitle: 'Recently Played (This Browser)',
+    }));
+    return {
+      ok: true,
+      loggedIn: true,
+      hasAuthCookies: true,
+      items: mappedRaw.map((item) => mapRawSearchResult(item, onQueueUpdate)),
+    };
+  }
+
   const res = await callMainWorldBridge<{
     ok?: boolean;
     loggedIn?: boolean;
@@ -166,14 +192,15 @@ export async function startSongRadio(videoId: string): Promise<boolean> {
 
 export async function fetchBrowseDetails(
   browseId: string,
-  kind?: 'Artist' | 'Album' | 'Playlist'
+  kind?: 'Artist' | 'Album' | 'Playlist',
+  params?: string
 ): Promise<BrowseDetailsData | null> {
   if (!browseId) return null;
 
   const res = await callMainWorldBridge<{
     ok?: boolean;
     details?: BrowseDetailsData;
-  }>('FETCH_BROWSE_DETAILS', { browseId, kind }, 6000);
+  }>('FETCH_BROWSE_DETAILS', { browseId, kind, params }, 6000);
 
   return res?.ok && res.details ? res.details : null;
 }
@@ -208,4 +235,81 @@ export async function addBrowseTrackToQueue(
   onQueueUpdate?: (queue: QueueTrackItem[]) => void
 ): Promise<boolean> {
   return queueMediaItem(track, playNext, onQueueUpdate);
+}
+
+export interface AddToPlaylistOptionsResponse {
+  ok: boolean;
+  loggedIn: boolean;
+  options: PlaylistMembershipOption[];
+  error?: string;
+}
+
+export async function fetchAddToPlaylistOptions(
+  videoId: string
+): Promise<AddToPlaylistOptionsResponse> {
+  if (!videoId) {
+    return { ok: false, loggedIn: true, options: [], error: 'No track selected.' };
+  }
+  const res = await callMainWorldBridge<{
+    ok?: boolean;
+    loggedIn?: boolean;
+    options?: PlaylistMembershipOption[];
+    error?: string;
+  }>('GET_ADD_TO_PLAYLIST_OPTIONS', { videoId }, 6000);
+
+  if (!res) {
+    return {
+      ok: false,
+      loggedIn: true,
+      options: [],
+      error: 'YouTube Music timed out reading playlists.',
+    };
+  }
+
+  return {
+    ok: Boolean(res.ok),
+    loggedIn: res.loggedIn ?? true,
+    options: Array.isArray(res.options) ? res.options : [],
+    error: res.error,
+  };
+}
+
+export async function toggleTrackInPlaylist(
+  playlistId: string,
+  videoId: string,
+  add: boolean
+): Promise<{ ok: boolean; added: boolean; error?: string }> {
+  const res = await callMainWorldBridge<{
+    ok?: boolean;
+    added?: boolean;
+    error?: string;
+  }>('TOGGLE_TRACK_IN_PLAYLIST', { playlistId, videoId, add }, 6000);
+
+  return {
+    ok: Boolean(res?.ok),
+    added: res?.added ?? add,
+    error: res?.error,
+  };
+}
+
+export async function createYtmPlaylist(
+  title: string,
+  privacyStatus: 'PRIVATE' | 'UNLISTED' | 'PUBLIC',
+  videoIdOrIds?: string | string[]
+): Promise<{ ok: boolean; playlistId?: string; error?: string }> {
+  const payload = Array.isArray(videoIdOrIds)
+    ? { title, privacyStatus, videoIds: videoIdOrIds }
+    : { title, privacyStatus, videoId: videoIdOrIds };
+
+  const res = await callMainWorldBridge<{
+    ok?: boolean;
+    playlistId?: string;
+    error?: string;
+  }>('CREATE_PLAYLIST', payload, 8000);
+
+  return {
+    ok: Boolean(res?.ok),
+    playlistId: res?.playlistId,
+    error: res?.error,
+  };
 }

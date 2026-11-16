@@ -11,6 +11,38 @@ Use `npm run version:bump -- <patch|minor|major|x.y.z>` after implementing and v
 
 ---
 
+## [0.8.0] - 2026-11-15
+
+### Fixed
+- **Shuffle Reliability Everywhere (`mainWorldBridge.ts`, `playerAdapter.ts`, `index.tsx`, `ContinuePlayingSidebar.tsx`)**: Routed `triggerShuffle()` through MAIN-world `TOGGLE_SHUFFLE` to click the active inner `.shuffle button#button` / `#expand-shuffle button#button` (or invoke Polymer's `onShuffleButtonClick`), refreshed `cachedQueue` immediately, and added Fisher–Yates Redux `MOVE_ITEM` reordering on upcoming manual tracks whenever YouTube Music flips `shuffle-on` without shuffling single-song/radio queues, plus a direct **Shuffle Queue** button (`SHUFFLE_UPCOMING_QUEUE`) in the sidebar header.
+
+### Added
+- **Save Whole Queue as Playlist (`mainWorldBridge.ts`, `searchAdapter.ts`, `ContinuePlayingSidebar.tsx`, `AddToPlaylistModal.tsx`)**: Added a 1-click **Save Playlist** utility button in `ContinuePlayingSidebar` that opens `AddToPlaylistModal` directly in batch creation mode and creates a new YouTube Music playlist populated with all deduplicated queue songs at once.
+- **Per-Song Skip Intro / Outro Saver (`trackTrimStore.ts`, `InAppSettingsPopover.tsx`, `FloatingPlayerBar.tsx`, `AestheticApp.tsx`)**: Persists custom per-song `{ startSec, endSec }` skip bounds in `chrome.storage.local` (bounded LRU up to 200 songs), displays emerald/rose markers on the seek bar, automatically jumps past saved intros once when playback starts, and advances past saved outros automatically.
+- **Soft-Fade Audio on Play, Pause & Skip (`playerAdapter.ts`, `index.tsx`, `InAppSettingsPopover.tsx`, `OptionsApp.tsx`)**: Added an optional cancelable `softAudioFade` volume fade (`default: true`) using `requestAnimationFrame` on `<video>.volume` while preserving and restoring exact user volume cleanly even on rapid button clicks.
+- **Retro Flip Clock Style & 1-Tap Cozy Mixes (`DigitalClock.tsx`, `InAppSettingsPopover.tsx`, `OptionsApp.tsx`)**: Added a dark smoked-glass `flip` split-flap clock display option (`clockStyle: 'digital' | 'flip'`) and 1-tap cozy sound mix buttons (**Rainy Cafe**, **Fireplace Vinyl**, **Midnight Study**, **Clear All**) in the **Sound** tab.
+
+## [0.7.0] - 2026-11-15
+
+### Added
+- **Cozy Background Soundscapes (`ambientAudioAdapter.ts`, `InAppSettingsPopover.tsx`)**: Added an isolated standalone Web Audio synthesizer in a new **Sound** tab inside Studio Controls with independent sliders for **Soft Rain**, **Vinyl Crackle**, **Warm Fireplace**, and **Cozy Cafe Murmur**, automatically pausing when playback pauses.
+- **Sleep Timer & Focus Timer (`sleepAndFocusTimer.ts`, `DigitalClock.tsx`, `InAppSettingsPopover.tsx`)**: Added quick Sleep Timer presets (`15m`, `30m`, `45m`, `60m`, and **End of Song**) with a smooth 15-second linear/smoothstep volume fade-out, automatic pause, and pre-sleep volume restoration; plus an optional Pomodoro **Focus / Break** pill displayed beneath `DigitalClock`.
+- **Playback Studio — Speed, Vinyl Pitch & A–B Loop (`playbackStudio.ts`, `playerAdapter.ts`, `FloatingPlayerBar.tsx`)**: Added `0.75×`–`1.50×` playback speed control (`preservesPitch` toggle for classic slowed vinyl pitch), and `[A` / `B]` loop markers rendered directly on the player seek bar with automatic track-change reset.
+- **Save to Playlist, Create Playlist, Queue Reorder & Recent History (`AddToPlaylistModal.tsx`, `mainWorldBridge.ts`, `queueAdapter.ts`, `listeningHistory.ts`, `ContinuePlayingSidebar.tsx`, `SearchBarOverlay.tsx`, `BrowseDetailsModal.tsx`)**: Added live playlist membership loading/toggling (`BookmarkPlus` buttons and `B` shortcut), inline YouTube Music playlist creation (`Private`/`Unlisted`/`Public`), up/down queue track reordering, clear-upcoming action, and a local 50-track **Recent** listening history hub chip.
+- **1-Click Studio Scene Presets (`scenePresets.ts`, `InAppSettingsPopover.tsx`, `OptionsApp.tsx`, `storage.ts`)**: Added 4 curated 1-click visual scenes (*Night Rain Desk*, *Warm Vinyl Lounge*, *Sakura Study*, *Editorial Cinema*) and support for saving/exporting/importing up to 6 custom scenes.
+
+## [0.6.0] - 2026-11-15
+
+### Fixed
+- **Search Filter Scrollbar Clipping**: Added `.no-scrollbar` utility rules inside Shadow DOM CSS (`shadow.css`) and adjusted flex overflow/spinner positioning in `SearchBarOverlay.tsx` so the horizontal filter pill row never renders a browser scrollbar while typing.
+
+### Added
+- **Expanded Stage Modes (`StageStyle`)**: Added **Retro Cassette Tape Deck** (`cassette`) with dual spoked spinning reels and live tape transfer ratio, **Editorial Poster Frame** (`poster`) with track metadata and live progress bar, and an articulated metallic **Turntable Tonearm** SVG needle on `vinyl` mode (`AlbumCarousel3D.tsx`).
+- **Living Atmosphere Effects**: Added optional **Aurora Flow** (`ambientAurora`) gradients and expanded `AmbientParticles` with `rain`, `petals`, and `embers` animations alongside `dust` and `bokeh` (`BackgroundEngine.tsx`, `shadow.css`, `InAppSettingsPopover.tsx`, `OptionsApp.tsx`).
+- **Floating Mini Desk Player (`Document PiP`)**: Added `pipAdapter.ts` supporting Chromium `documentPictureInPicture` (with HTML5 Canvas `captureStream` video PiP fallback) showing track artwork, 1-line synced lyric, progress bar, and Prev/Play-Pause/Next controls, toggled via the header/action pill (`FloatingQuickActions.tsx`) or `P` shortcut (`keyboardShortcuts.ts`).
+- **Artist Discography Shelves & Moods/Explore Discovery**: Expanded `parseBrowseDetails` to parse Artist `Albums`, `Singles & EPs`, `Videos`, and `Similar Artists` carousels into `shelves` with in-modal `<- Back` navigation (`BrowseDetailsModal.tsx`, `innertubeParsers.ts`), and added a **Moods & Explore** chip (`explore`) backed by `FEmusic_moods_and_genres` and `FEmusic_explore` (`SearchBarOverlay.tsx`, `mainWorldBridge.ts`).
+- **Offline Lyric Romanization & Shareable Lyric Poster PNG**: Added offline Hangul & Japanese Kana transliteration (`romanize.ts`) shown beneath non-Latin lyrics with an inline `Aa` toggle, plus a `1080×1350` PNG **Share Lyric Poster** modal (`lyricCardRenderer.ts`, `LyricsStage.tsx`) with clipboard Copy PNG & Download controls.
+
 ## [0.5.1] - 2026-11-15 — Vinyl Rotation Visibility, Brave Session Auth, Liked Songs & Playlist Contents
 
 ### Fixed

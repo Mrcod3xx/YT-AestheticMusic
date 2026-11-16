@@ -1,7 +1,23 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, ChevronUp, Loader2, RefreshCw } from 'lucide-react';
+import {
+  Check,
+  ChevronDown,
+  ChevronUp,
+  Copy,
+  Download,
+  ImageDown,
+  Loader2,
+  RefreshCw,
+  X,
+} from 'lucide-react';
 import { LyricsData, LyricsMode } from '../../../shared/types';
 import { findActiveSyncedLineIndex } from '../../../shared/lyricsParser';
+import { hasRomanizableScript, romanizeLine } from '../../../shared/romanize';
+import {
+  copyLyricCardBlob,
+  downloadLyricCardBlob,
+  renderLyricPosterCard,
+} from '../../../shared/lyricCardRenderer';
 
 interface LyricsStageProps {
   open: boolean;
@@ -17,6 +33,13 @@ interface LyricsStageProps {
   highlightActive: boolean;
   borderRadius: number;
   reducedMotion: boolean;
+  romanizeLyrics?: boolean;
+  trackTitle?: string;
+  trackArtist?: string;
+  trackAlbum?: string;
+  trackArtworkUrl?: string;
+  accentColor?: string;
+  onToggleRomanize?: () => void;
   onChangeMode: (mode: LyricsMode) => void;
   onSeekSeconds: (seconds: number) => void;
   onRetry: () => void;
@@ -53,6 +76,60 @@ const ModePills: React.FC<{
     ))}
   </div>
 );
+
+const LyricsActionControls: React.FC<{
+  hasLyrics: boolean;
+  showRomanizeToggle: boolean;
+  romanizeLyrics: boolean;
+  variant?: 'translucent' | 'solid';
+  onToggleRomanize?: () => void;
+  onOpenShareCard: () => void;
+}> = ({
+  hasLyrics,
+  showRomanizeToggle,
+  romanizeLyrics,
+  variant = 'solid',
+  onToggleRomanize,
+  onOpenShareCard,
+}) => {
+  if (!hasLyrics) return null;
+  const pillShell =
+    variant === 'translucent'
+      ? 'bg-black/45 backdrop-blur-md border border-white/10'
+      : 'bg-white/[0.06] border border-white/10';
+  return (
+    <div className="flex items-center gap-1.5">
+      {showRomanizeToggle && onToggleRomanize && (
+        <button
+          type="button"
+          onClick={onToggleRomanize}
+          title={
+            romanizeLyrics
+              ? 'Hide pronunciation romanization'
+              : 'Show pronunciation romanization'
+          }
+          aria-pressed={romanizeLyrics}
+          className={`px-2.5 py-1.5 rounded-full text-[11.5px] font-semibold transition cursor-pointer ${pillShell} ${
+            romanizeLyrics
+              ? 'text-[var(--aesthetic-accent,#E89B63)] border-white/25'
+              : 'text-zinc-400 hover:text-white'
+          }`}
+        >
+          Aa
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={onOpenShareCard}
+        title="Share Lyric Poster Card (PNG)"
+        className={`px-2.5 py-1.5 rounded-full text-[11.5px] font-medium flex items-center gap-1.5 text-zinc-200 hover:text-white transition cursor-pointer ${pillShell}`}
+      >
+        <ImageDown className="w-3.5 h-3.5 text-[var(--aesthetic-accent,#E89B63)]" />
+        <span className="hidden sm:inline">Card</span>
+      </button>
+    </div>
+  );
+};
 
 interface LyricsStatusProps {
   lyrics: LyricsData;
@@ -127,6 +204,7 @@ const IntroWaitingDots: React.FC<{ compact?: boolean }> = ({ compact }) => (
 
 interface ScrollableLyricsListProps {
   lyrics: LyricsData;
+  romanizedLines: string[];
   syncedActiveIdx: number;
   spotlightIdx: number;
   highlightActive: boolean;
@@ -139,6 +217,7 @@ interface ScrollableLyricsListProps {
 
 const ScrollableLyricsList: React.FC<ScrollableLyricsListProps> = ({
   lyrics,
+  romanizedLines,
   syncedActiveIdx,
   spotlightIdx,
   highlightActive,
@@ -176,9 +255,10 @@ const ScrollableLyricsList: React.FC<ScrollableLyricsListProps> = ({
           (syncedActiveIdx >= 0 && idx > syncedActiveIdx && idx <= syncedActiveIdx + 2));
 
       const clickable = lyrics.isSynced && typeof line.startTimeMs === 'number';
+      const roman = romanizedLines[idx] || '';
 
       return (
-        <p
+        <div
           key={idx}
           ref={(el) => {
             lineRefs.current[idx] = el;
@@ -207,8 +287,18 @@ const ScrollableLyricsList: React.FC<ScrollableLyricsListProps> = ({
               : undefined
           }
         >
-          {line.text}
-        </p>
+          <div>{line.text}</div>
+          {roman && (
+            <div
+              className={`font-normal tracking-wide mt-0.5 ${
+                isActive ? 'text-[12.5px] text-zinc-200/80' : 'text-[11px] text-zinc-400/75'
+              }`}
+              style={{ textShadow: 'none' }}
+            >
+              {roman}
+            </div>
+          )}
+        </div>
       );
     })}
   </>
@@ -228,6 +318,13 @@ export const LyricsStage: React.FC<LyricsStageProps> = ({
   highlightActive,
   borderRadius,
   reducedMotion,
+  romanizeLyrics = true,
+  trackTitle = 'Now Playing',
+  trackArtist = 'YouTube Music',
+  trackAlbum,
+  trackArtworkUrl,
+  accentColor = '#C28356',
+  onToggleRomanize,
   onChangeMode,
   onSeekSeconds,
   onRetry,
@@ -241,6 +338,25 @@ export const LyricsStage: React.FC<LyricsStageProps> = ({
   const [pausedFollow, setPausedFollow] = useState(false);
   const [spotlightIdx, setSpotlightIdx] = useState(0);
   const [liveTimeMs, setLiveTimeMs] = useState(currentTimeMs);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [selectedShareIndices, setSelectedShareIndices] = useState<number[]>([]);
+  const [cardBlob, setCardBlob] = useState<Blob | null>(null);
+  const [cardPreviewUrl, setCardPreviewUrl] = useState<string>('');
+  const [cardRendering, setCardRendering] = useState(false);
+  const [cardCopied, setCardCopied] = useState(false);
+
+  const hasLyrics = lyrics.available && lyrics.lines.length > 0;
+  const hasAnyRomanizable = useMemo(
+    () => hasLyrics && lyrics.lines.some((l) => hasRomanizableScript(l.text)),
+    [hasLyrics, lyrics.lines]
+  );
+  const romanizedLines = useMemo(
+    () =>
+      romanizeLyrics && hasLyrics
+        ? lyrics.lines.map((l) => romanizeLine(l.text))
+        : [],
+    [romanizeLyrics, hasLyrics, lyrics.lines]
+  );
 
   useEffect(() => {
     manualScrollUntilRef.current = 0;
@@ -297,6 +413,94 @@ export const LyricsStage: React.FC<LyricsStageProps> = ({
   }, [lyrics.isSynced, lyrics.lines, liveTimeMs, timingOffsetMs]);
 
   const scrollTargetIndex = lyrics.isSynced ? syncedActiveIdx : spotlightIdx;
+
+  // Render & preview 1080x1350 Lyric Poster Card PNG whenever Share Card modal selection updates
+  useEffect(() => {
+    if (!shareOpen || selectedShareIndices.length === 0) return;
+    let cancelled = false;
+    setCardRendering(true);
+    const chosenLines = selectedShareIndices
+      .map((idx) => ({
+        primary: lyrics.lines[idx]?.text?.trim() || '',
+        secondary: romanizedLines[idx] || undefined,
+      }))
+      .filter((item) => Boolean(item.primary));
+
+    void renderLyricPosterCard({
+      title: trackTitle,
+      artist: trackArtist,
+      album: trackAlbum,
+      artworkUrl: trackArtworkUrl,
+      lines: chosenLines,
+      accentColor,
+      accentHighlight: accentColor,
+    })
+      .then((blob) => {
+        if (cancelled) return;
+        const url = URL.createObjectURL(blob);
+        setCardBlob(blob);
+        setCardPreviewUrl((prev) => {
+          if (prev) URL.revokeObjectURL(prev);
+          return url;
+        });
+      })
+      .catch(() => {
+        if (!cancelled) setCardBlob(null);
+      })
+      .finally(() => {
+        if (!cancelled) setCardRendering(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    shareOpen,
+    selectedShareIndices,
+    lyrics.lines,
+    romanizedLines,
+    trackTitle,
+    trackArtist,
+    trackAlbum,
+    trackArtworkUrl,
+    accentColor,
+  ]);
+
+  useEffect(() => {
+    return () => {
+      if (cardPreviewUrl) URL.revokeObjectURL(cardPreviewUrl);
+    };
+  }, [cardPreviewUrl]);
+
+  useEffect(() => {
+    setShareOpen(false);
+  }, [lyrics.trackKey]);
+
+  const openShareCardModal = () => {
+    const startIdx = Math.max(0, scrollTargetIndex >= 0 ? scrollTargetIndex : 0);
+    const nonEmptyIndices: number[] = [];
+    for (let i = startIdx; i < lyrics.lines.length && nonEmptyIndices.length < 3; i++) {
+      if (lyrics.lines[i]?.text?.trim()) nonEmptyIndices.push(i);
+    }
+    if (nonEmptyIndices.length === 0) {
+      for (let i = 0; i < lyrics.lines.length && nonEmptyIndices.length < 3; i++) {
+        if (lyrics.lines[i]?.text?.trim()) nonEmptyIndices.push(i);
+      }
+    }
+    setSelectedShareIndices(nonEmptyIndices);
+    setCardCopied(false);
+    setShareOpen(true);
+  };
+
+  const toggleShareLineIndex = (idx: number) => {
+    setCardCopied(false);
+    setSelectedShareIndices((prev) => {
+      if (prev.includes(idx)) {
+        return prev.length > 1 ? prev.filter((x) => x !== idx) : prev;
+      }
+      return [...prev, idx].sort((a, b) => a - b).slice(0, 4);
+    });
+  };
 
   // Scroll active line into Spotify upper-middle focal sweet spot (~36% height)
   useEffect(() => {
@@ -408,12 +612,130 @@ export const LyricsStage: React.FC<LyricsStageProps> = ({
 
   const panelRadius = `${Math.min(32, borderRadius + 4)}px`;
   const enterAnimClass = reducedMotion ? '' : 'animate-lyrics-enter';
-  const hasLyrics = lyrics.available && lyrics.lines.length > 0;
+
+  const safeFileSlug = (trackTitle || 'lyric-card')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+
+  const shareCardModal = shareOpen ? (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md p-6 pointer-events-auto"
+      onClick={() => setShareOpen(false)}
+    >
+      <div
+        className="w-full max-w-[720px] rounded-3xl bg-[#101218]/95 border border-white/15 shadow-2xl p-6 flex flex-col md:flex-row gap-6 text-white"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="w-full md:w-[270px] shrink-0 flex flex-col items-center gap-3">
+          <div className="relative w-full aspect-[4/5] rounded-2xl overflow-hidden bg-zinc-900 border border-white/15 flex items-center justify-center shadow-xl">
+            {cardPreviewUrl ? (
+              <img
+                src={cardPreviewUrl}
+                alt="Lyric poster preview"
+                className="w-full h-full object-contain"
+              />
+            ) : (
+              <Loader2 className="w-6 h-6 animate-spin text-zinc-400" />
+            )}
+            {cardRendering && (
+              <div className="absolute inset-0 bg-black/35 flex items-center justify-center">
+                <Loader2 className="w-5 h-5 animate-spin text-white" />
+              </div>
+            )}
+          </div>
+          <div className="w-full grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              disabled={!cardBlob || cardRendering}
+              onClick={async () => {
+                if (!cardBlob) return;
+                const ok = await copyLyricCardBlob(cardBlob);
+                if (ok) {
+                  setCardCopied(true);
+                  window.setTimeout(() => setCardCopied(false), 2000);
+                }
+              }}
+              className="py-2 px-3 rounded-xl bg-white/10 hover:bg-white/20 disabled:opacity-45 border border-white/15 text-[12px] font-medium flex items-center justify-center gap-1.5 transition cursor-pointer"
+            >
+              {cardCopied ? (
+                <>
+                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Copied PNG</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>Copy PNG</span>
+                </>
+              )}
+            </button>
+            <button
+              type="button"
+              disabled={!cardBlob || cardRendering}
+              onClick={() => {
+                if (!cardBlob) return;
+                downloadLyricCardBlob(cardBlob, `${safeFileSlug || 'song'}-card.png`);
+              }}
+              className="py-2 px-3 rounded-xl bg-white text-black hover:bg-zinc-200 disabled:opacity-45 text-[12px] font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Download</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="flex-1 min-w-0 flex flex-col max-h-[390px]">
+          <div className="flex items-center justify-between gap-2 pb-3 border-b border-white/10">
+            <div>
+              <h3 className="text-[15px] font-semibold">Share Lyric Poster</h3>
+              <p className="text-[11.5px] text-zinc-400">
+                Select up to 4 lyric lines for your 1080×1350 PNG card
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShareOpen(false)}
+              className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-zinc-300 hover:text-white transition cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto pr-1 pt-2.5 space-y-1.5 custom-queue-scroll">
+            {lyrics.lines.map((line, idx) => {
+              if (!line.text?.trim()) return null;
+              const selected = selectedShareIndices.includes(idx);
+              const roman = romanizedLines[idx] || '';
+              return (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => toggleShareLineIndex(idx)}
+                  className={`w-full text-left px-3 py-2 rounded-xl border transition cursor-pointer ${
+                    selected
+                      ? 'bg-white/15 border-white/35 text-white'
+                      : 'bg-white/[0.03] border-white/10 text-zinc-300 hover:bg-white/[0.08]'
+                  }`}
+                >
+                  <div className="text-[12.5px] font-medium leading-snug">{line.text}</div>
+                  {roman && (
+                    <div className="text-[11px] text-zinc-400 mt-0.5">{roman}</div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  ) : null;
 
   if (mode === 'focus') {
     const activeFocusIdx = lyrics.isSynced ? syncedActiveIdx : spotlightIdx;
 
     return (
+      <>
       <div
         className={`absolute inset-y-0 flex items-center ${justifyClass} pointer-events-none z-20 ${enterAnimClass}`}
         style={stageInlineStyle}
@@ -508,6 +830,17 @@ export const LyricsStage: React.FC<LyricsStageProps> = ({
                       >
                         {line.text}
                       </span>
+                      {romanizedLines[idx] && (
+                        <span
+                          className={`block mt-1 font-normal tracking-normal normal-case ${
+                            isActive
+                              ? 'text-[13px] text-zinc-200/85'
+                              : 'text-[11px] text-white/45'
+                          }`}
+                        >
+                          {romanizedLines[idx]}
+                        </span>
+                      )}
                     </button>
                   );
                 })}
@@ -550,6 +883,15 @@ export const LyricsStage: React.FC<LyricsStageProps> = ({
 
             <ModePills mode={mode} variant="translucent" onChangeMode={onChangeMode} />
 
+            <LyricsActionControls
+              hasLyrics={hasLyrics}
+              showRomanizeToggle={hasAnyRomanizable}
+              romanizeLyrics={romanizeLyrics}
+              variant="translucent"
+              onToggleRomanize={onToggleRomanize}
+              onOpenShareCard={openShareCardModal}
+            />
+
             {lyrics.source && (
               <span className="hidden sm:inline-block px-3 py-1.5 rounded-full bg-black/40 border border-white/10 text-[11px] text-zinc-400">
                 {lyrics.source}
@@ -558,12 +900,15 @@ export const LyricsStage: React.FC<LyricsStageProps> = ({
           </div>
         </div>
       </div>
+      {shareCardModal}
+      </>
     );
   }
 
   const isCompact = mode === 'compact';
 
   return (
+    <>
     <div
       className={`absolute inset-y-0 flex items-center ${justifyClass} pointer-events-none z-20 ${enterAnimClass}`}
       style={stageInlineStyle}
@@ -617,7 +962,16 @@ export const LyricsStage: React.FC<LyricsStageProps> = ({
               </button>
             )}
           </div>
-          <ModePills mode={mode} onChangeMode={onChangeMode} />
+          <div className="flex items-center gap-2 shrink-0">
+            <LyricsActionControls
+              hasLyrics={hasLyrics}
+              showRomanizeToggle={hasAnyRomanizable}
+              romanizeLyrics={romanizeLyrics}
+              onToggleRomanize={onToggleRomanize}
+              onOpenShareCard={openShareCardModal}
+            />
+            <ModePills mode={mode} onChangeMode={onChangeMode} />
+          </div>
         </div>
 
         <div
@@ -638,6 +992,7 @@ export const LyricsStage: React.FC<LyricsStageProps> = ({
           ) : (
             <ScrollableLyricsList
               lyrics={lyrics}
+              romanizedLines={romanizedLines}
               syncedActiveIdx={syncedActiveIdx}
               spotlightIdx={spotlightIdx}
               highlightActive={highlightActive}
@@ -658,5 +1013,7 @@ export const LyricsStage: React.FC<LyricsStageProps> = ({
         )}
       </div>
     </div>
+    {shareCardModal}
+    </>
   );
 };

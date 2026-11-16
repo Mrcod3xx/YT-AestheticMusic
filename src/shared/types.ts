@@ -9,11 +9,66 @@ export type ThemePreset =
   | 'sakura-haze'
   | 'custom';
 
-export type StageStyle = 'carousel' | 'vinyl' | 'minimal';
+export type StageStyle = 'carousel' | 'vinyl' | 'cassette' | 'poster' | 'minimal';
 
-export type AmbientParticles = 'none' | 'dust' | 'bokeh';
+export type AmbientParticles = 'none' | 'dust' | 'bokeh' | 'rain' | 'petals' | 'embers';
 
-export type LibraryHubSection = 'liked' | 'playlists' | 'home';
+export type LibraryHubSection = 'liked' | 'playlists' | 'home' | 'explore' | 'history';
+
+export type AmbientSoundChannel = 'rain' | 'vinyl' | 'fireplace' | 'cafe';
+
+export type AmbientSoundLevels = Record<AmbientSoundChannel, number>;
+
+export interface ScenePresetSnapshot {
+  theme: ThemePreset;
+  accentColor: string;
+  clockColor: string;
+  fontFamily: 'modern' | 'editorial' | 'mono';
+  stageStyle: StageStyle;
+  backgroundMode: BackgroundMode;
+  ambientParticles: AmbientParticles;
+  ambientAurora: boolean;
+  blurIntensity: number;
+  backgroundBrightness: number;
+  darknessOverlay: number;
+  glowIntensity: number;
+  panelTransparency: number;
+  playerGlassOpacity: number;
+  vignette: boolean;
+  filmGrain: boolean;
+}
+
+export interface StudioScenePreset {
+  id: string;
+  name: string;
+  tagline: string;
+  snapshot: ScenePresetSnapshot;
+  isBuiltIn?: boolean;
+}
+
+export interface PlaylistMembershipOption {
+  playlistId: string;
+  title: string;
+  thumbnailUrl: string;
+  containsTrack: boolean;
+  privacyStatus?: string;
+}
+
+export interface ListeningHistoryItem {
+  id: string;
+  title: string;
+  artist: string;
+  album: string;
+  artworkUrl: string;
+  videoId?: string;
+  playedAt: number;
+  playCount: number;
+}
+
+export interface AbLoopRange {
+  aSec: number | null;
+  bSec: number | null;
+}
 
 export type LyricsMode = 'focus' | 'compact' | 'full';
 
@@ -23,10 +78,29 @@ export type SearchResultCategory = 'Song' | 'Video' | 'Album' | 'Artist' | 'Play
 
 export interface BrowseTarget {
   browseId: string;
+  params?: string;
   kind?: 'Artist' | 'Album' | 'Playlist';
   previewTitle?: string;
   previewSubtitle?: string;
   previewArtworkUrl?: string;
+}
+
+export interface BrowseShelfItem {
+  id: string;
+  title: string;
+  subtitle: string;
+  kind: 'Album' | 'Artist' | 'Playlist' | 'Video';
+  artworkUrl: string;
+  browseId?: string;
+  params?: string;
+  videoId?: string;
+  playlistId?: string;
+  watchEndpoint?: Record<string, unknown>;
+}
+
+export interface BrowseShelfSection {
+  title: string;
+  items: BrowseShelfItem[];
 }
 
 export interface BrowseTrackItem {
@@ -57,6 +131,7 @@ export interface BrowseDetailsData {
   shuffleEndpoint?: Record<string, unknown>;
   tracks: BrowseTrackItem[];
   tracksHeading: string;
+  shelves?: BrowseShelfSection[];
 }
 
 export interface AestheticSettings {
@@ -72,6 +147,7 @@ export interface AestheticSettings {
   clockFontSize: number; // Scale percentage 75 - 140
   clock24Hour: boolean;
   clockColor: string;
+  clockStyle: ClockStyle;
   showCarousel: boolean;
   stageStyle: StageStyle;
   showSidebar: boolean;
@@ -80,6 +156,7 @@ export interface AestheticSettings {
   panelTransparency: number; // 0 to 100
   borderRadius: number; // px (12 to 32)
   fontFamily: 'modern' | 'editorial' | 'mono';
+  customScenes: StudioScenePreset[];
 
   // Background
   backgroundMode: BackgroundMode;
@@ -91,6 +168,7 @@ export interface AestheticSettings {
   vignette: boolean;
   filmGrain: boolean;
   ambientParticles: AmbientParticles;
+  ambientAurora: boolean;
   customBackgroundType: 'none' | 'image' | 'video';
   customBackgroundName: string;
   customWallpaperVersion: number;
@@ -101,6 +179,7 @@ export interface AestheticSettings {
   showVolumeControl: boolean;
   thumbnailSize: 'small' | 'medium' | 'large';
   playerGlassOpacity: number; // 20 to 95
+  softAudioFade: boolean;
 
   // Lyrics
   lyricsEnabled: boolean;
@@ -110,6 +189,7 @@ export interface AestheticSettings {
   lyricsHighlightActive: boolean;
   lyricsDimBackground: boolean;
   showMiniLyricLine: boolean;
+  romanizeLyrics: boolean;
 
   // Performance
   reducedMotion: boolean;
@@ -184,3 +264,12 @@ export type ExtensionMessage =
   | { type: 'WALLPAPER_UPDATED'; version: number }
   | { type: 'OPEN_OPTIONS_PAGE' }
   | { type: 'RESET_SETTINGS' };
+
+export type ClockStyle = 'digital' | 'flip';
+
+export interface TrackTrimPoint {
+  videoId: string;
+  startSec?: number;
+  endSec?: number;
+  updatedAt: number;
+}

@@ -17,16 +17,34 @@ import {
   Keyboard,
   Copy,
   Check,
+  CloudRain,
+  Flame,
+  Coffee,
+  Moon,
+  Timer,
+  Gauge,
+  Repeat,
+  Plus,
+  Play,
+  Pause,
+  Volume2,
+  Scissors,
 } from 'lucide-react';
 import {
+  AbLoopRange,
   AestheticSettings,
   AmbientParticles,
+  AmbientSoundChannel,
+  AmbientSoundLevels,
   BackgroundMode,
+  ClockStyle,
   LyricsData,
   PlayerPosition,
   StageStyle,
+  StudioScenePreset,
   ThemePreset,
   TrackMetadata,
+  TrackTrimPoint,
 } from '../../../shared/types';
 import {
   formatLyricsForCopy,
@@ -38,17 +56,76 @@ import {
   THEME_DEFINITIONS,
 } from '../../../shared/themeTokens';
 import {
+  BUILT_IN_SCENE_PRESETS,
+  MAX_CUSTOM_SCENES,
+} from '../../../shared/scenePresets';
+import {
+  PomodoroState,
+  formatCountdownMmSs,
+} from '../../../shared/sleepAndFocusTimer';
+import { formatShortSeconds } from '../../../shared/playbackStudio';
+import {
   clearCustomWallpaper,
   saveCustomWallpaper,
 } from '../../../shared/wallpaperStore';
 import { EXTENSION_VERSION } from '../../../shared/version';
 
+const COZY_AMBIENT_MIXES: Array<{
+  id: string;
+  label: string;
+  levels: AmbientSoundLevels;
+}> = [
+  {
+    id: 'rainy-cafe',
+    label: 'Rainy Cafe',
+    levels: { rain: 55, vinyl: 12, fireplace: 0, cafe: 42 },
+  },
+  {
+    id: 'fireplace-vinyl',
+    label: 'Fireplace Vinyl',
+    levels: { rain: 0, vinyl: 38, fireplace: 62, cafe: 0 },
+  },
+  {
+    id: 'midnight-study',
+    label: 'Midnight Study',
+    levels: { rain: 40, vinyl: 22, fireplace: 28, cafe: 15 },
+  },
+];
+
+export type StudioPopoverTab = 'presets' | 'appearance' | 'sound' | 'wallpaper';
+
 interface InAppSettingsPopoverProps {
   open: boolean;
+  requestedTab?: { tab: StudioPopoverTab; signal: number };
   settings: AestheticSettings;
   track: TrackMetadata;
   lyrics: LyricsData;
   lyricsTimingOffsetMs: number;
+  ambientLevels: AmbientSoundLevels;
+  onUpdateAmbientLevel: (channel: AmbientSoundChannel, level: number) => void;
+  onApplyAmbientMix: (levels: AmbientSoundLevels) => void;
+  onMuteAmbient: () => void;
+  sleepMode: 'off' | 'countdown' | 'end-of-track';
+  sleepRemainingMs: number;
+  onStartSleepTimer: (choice: number | 'end-of-track') => void;
+  onCancelSleepTimer: () => void;
+  pomodoro: PomodoroState;
+  onTogglePomodoro: () => void;
+  onResetPomodoro: (phase?: 'focus' | 'break') => void;
+  onDismissPomodoro: () => void;
+  playbackSpeed: number;
+  preservePitch: boolean;
+  abLoop: AbLoopRange;
+  onChangePlaybackSpeed: (speed: number) => void;
+  onTogglePreservePitch: () => void;
+  onSetAbLoopPoint: (point: 'a' | 'b') => void;
+  onClearAbLoop: () => void;
+  trackTrim?: TrackTrimPoint | null;
+  onMarkTrackTrim: (bound: 'start' | 'end') => void;
+  onClearTrackTrim: () => void;
+  onApplyScene: (scene: StudioScenePreset) => void;
+  onSaveCustomScene: (name: string) => void;
+  onDeleteCustomScene: (id: string) => void;
   onAdjustLyricsOffset: (deltaMs: number) => void;
   onResetLyricsOffset: () => void;
   onClose: () => void;
@@ -58,8 +135,6 @@ interface InAppSettingsPopoverProps {
   onReset: () => void;
   onWallpaperUploaded: () => void;
 }
-
-type PopoverTab = 'presets' | 'appearance' | 'wallpaper';
 
 interface SliderControlProps {
   label: string;
@@ -97,10 +172,36 @@ const SliderControl: React.FC<SliderControlProps> = ({
 
 export const InAppSettingsPopover: React.FC<InAppSettingsPopoverProps> = ({
   open,
+  requestedTab,
   settings,
   track,
   lyrics,
   lyricsTimingOffsetMs,
+  ambientLevels,
+  onUpdateAmbientLevel,
+  onApplyAmbientMix,
+  onMuteAmbient,
+  sleepMode,
+  sleepRemainingMs,
+  onStartSleepTimer,
+  onCancelSleepTimer,
+  pomodoro,
+  onTogglePomodoro,
+  onResetPomodoro,
+  onDismissPomodoro,
+  playbackSpeed,
+  preservePitch,
+  abLoop,
+  onChangePlaybackSpeed,
+  onTogglePreservePitch,
+  onSetAbLoopPoint,
+  onClearAbLoop,
+  trackTrim = null,
+  onMarkTrackTrim,
+  onClearTrackTrim,
+  onApplyScene,
+  onSaveCustomScene,
+  onDeleteCustomScene,
   onAdjustLyricsOffset,
   onResetLyricsOffset,
   onClose,
@@ -113,12 +214,19 @@ export const InAppSettingsPopover: React.FC<InAppSettingsPopoverProps> = ({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const popoverRef = useRef<HTMLDivElement | null>(null);
   const copyTimerRef = useRef<number | null>(null);
-  const [activeTab, setActiveTab] = useState<PopoverTab>('presets');
+  const [activeTab, setActiveTab] = useState<StudioPopoverTab>('presets');
   const [uploadStatus, setUploadStatus] = useState<string>('');
   const [isDragging, setIsDragging] = useState(false);
   const [copiedLyrics, setCopiedLyrics] = useState(false);
+  const [newSceneName, setNewSceneName] = useState('');
 
   const hasLyrics = lyrics.available && lyrics.lines.length > 0;
+
+  useEffect(() => {
+    if (requestedTab && requestedTab.signal > 0) {
+      setActiveTab(requestedTab.tab);
+    }
+  }, [requestedTab?.signal, requestedTab?.tab]);
 
   useEffect(() => {
     return () => {
@@ -285,11 +393,18 @@ export const InAppSettingsPopover: React.FC<InAppSettingsPopoverProps> = ({
 
   const themeOrder = ALL_THEME_ORDER;
 
-  const tabs: { id: PopoverTab; label: string; icon: React.ReactNode }[] = [
+  const tabs: { id: StudioPopoverTab; label: string; icon: React.ReactNode }[] = [
     { id: 'presets', label: 'Presets', icon: <Sparkles className="w-3.5 h-3.5" /> },
     { id: 'appearance', label: 'UI & Lyrics', icon: <Type className="w-3.5 h-3.5" /> },
+    { id: 'sound', label: 'Sound', icon: <Volume2 className="w-3.5 h-3.5" /> },
     { id: 'wallpaper', label: 'Wallpaper', icon: <ImageIcon className="w-3.5 h-3.5" /> },
   ];
+
+  const anyAmbientActive =
+    ambientLevels.rain > 0 ||
+    ambientLevels.vinyl > 0 ||
+    ambientLevels.fireplace > 0 ||
+    ambientLevels.cafe > 0;
 
   return (
     <div
@@ -358,7 +473,7 @@ export const InAppSettingsPopover: React.FC<InAppSettingsPopoverProps> = ({
       </div>
 
       {/* Studio Tabs */}
-      <div className="grid grid-cols-3 gap-1 p-1 mt-3 rounded-xl bg-white/[0.04] border border-white/10 shrink-0">
+      <div className="grid grid-cols-4 gap-1 p-1 mt-3 rounded-xl bg-white/[0.04] border border-white/10 shrink-0">
         {tabs.map((tab) => {
           const active = activeTab === tab.id;
           return (
@@ -366,14 +481,14 @@ export const InAppSettingsPopover: React.FC<InAppSettingsPopoverProps> = ({
               key={tab.id}
               type="button"
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-[12.5px] font-medium transition cursor-pointer ${
+              className={`flex items-center justify-center gap-1 py-2.5 px-1 rounded-lg text-[11.5px] font-medium transition cursor-pointer ${
                 active
                   ? 'bg-white/15 text-white shadow-sm'
                   : 'text-zinc-400 hover:text-zinc-200'
               }`}
             >
               {tab.icon}
-              <span>{tab.label}</span>
+              <span className="truncate">{tab.label}</span>
             </button>
           );
         })}
@@ -383,6 +498,113 @@ export const InAppSettingsPopover: React.FC<InAppSettingsPopoverProps> = ({
       <div className="flex-1 overflow-y-auto pr-1 mt-3 space-y-4 custom-queue-scroll">
         {activeTab === 'presets' && (
           <>
+            {/* 1-Click Studio Scenes */}
+            <div className="space-y-2 pb-3 border-b border-white/10">
+              <div className="flex items-center justify-between">
+                <label className="text-[10.5px] font-semibold uppercase tracking-wider text-zinc-400">
+                  Studio Scene Presets
+                </label>
+                <span className="text-[10px] text-zinc-500">1-click room mood</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {BUILT_IN_SCENE_PRESETS.map((scene) => {
+                  const def = THEME_DEFINITIONS[scene.snapshot.theme];
+                  return (
+                    <button
+                      key={scene.id}
+                      type="button"
+                      onClick={() => onApplyScene(scene)}
+                      className="p-2.5 rounded-2xl border border-white/10 bg-white/[0.03] hover:bg-white/[0.08] text-left transition cursor-pointer"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="w-3.5 h-3.5 rounded-full border border-white/30 shrink-0"
+                          style={{ background: def?.previewGradient || '#C28356' }}
+                        />
+                        <span className="text-[12px] font-semibold text-white truncate">
+                          {scene.name}
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-zinc-400 line-clamp-1 mt-0.5">
+                        {scene.tagline}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {settings.customScenes.length > 0 && (
+                <div className="space-y-1.5 pt-1">
+                  <div className="text-[10px] uppercase tracking-wider text-zinc-500">
+                    My Saved Scenes ({settings.customScenes.length}/{MAX_CUSTOM_SCENES})
+                  </div>
+                  <div className="space-y-1">
+                    {settings.customScenes.map((scene) => (
+                      <div
+                        key={scene.id}
+                        className="flex items-center gap-1.5 rounded-xl bg-white/[0.03] border border-white/10 px-2.5 py-1.5"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => onApplyScene(scene)}
+                          className="flex-1 min-w-0 text-left text-[11.5px] font-medium text-zinc-200 hover:text-white truncate cursor-pointer"
+                        >
+                          {scene.name}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onDeleteCustomScene(scene.id)}
+                          title="Delete saved scene"
+                          className="w-6 h-6 rounded-lg flex items-center justify-center text-zinc-400 hover:text-red-300 hover:bg-red-500/15 transition cursor-pointer"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center gap-1.5 pt-1">
+                <input
+                  type="text"
+                  maxLength={28}
+                  value={newSceneName}
+                  onChange={(e) => setNewSceneName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && newSceneName.trim()) {
+                      e.preventDefault();
+                      onSaveCustomScene(newSceneName.trim());
+                      setNewSceneName('');
+                    }
+                  }}
+                  placeholder={
+                    settings.customScenes.length >= MAX_CUSTOM_SCENES
+                      ? 'Limit reached (6 scenes)'
+                      : 'Name current look...'
+                  }
+                  disabled={settings.customScenes.length >= MAX_CUSTOM_SCENES}
+                  className="flex-1 min-w-0 rounded-xl px-2.5 py-1.5 bg-white/[0.05] border border-white/10 text-[11.5px] text-white placeholder-zinc-500 focus:outline-none focus:border-white/25 disabled:opacity-50"
+                />
+                <button
+                  type="button"
+                  disabled={
+                    !newSceneName.trim() ||
+                    settings.customScenes.length >= MAX_CUSTOM_SCENES
+                  }
+                  onClick={() => {
+                    if (!newSceneName.trim()) return;
+                    onSaveCustomScene(newSceneName.trim());
+                    setNewSceneName('');
+                  }}
+                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 disabled:opacity-40 text-[11px] font-medium text-white transition cursor-pointer disabled:cursor-not-allowed shrink-0"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Save</span>
+                </button>
+              </div>
+            </div>
+
             {/* Theme Presets with Visual Swatch Preview */}
             <div className="space-y-2">
               <label className="text-[10.5px] font-semibold uppercase tracking-wider text-zinc-400">
@@ -457,12 +679,12 @@ export const InAppSettingsPopover: React.FC<InAppSettingsPopoverProps> = ({
               />
             </div>
 
-            {/* Vignette & Film Grain */}
-            <div className="grid grid-cols-2 gap-2 pt-1">
+            {/* Vignette, Film Grain & Aurora */}
+            <div className="grid grid-cols-3 gap-2 pt-1">
               <button
                 type="button"
                 onClick={() => onUpdateSettings({ vignette: !settings.vignette })}
-                className={`py-2.5 px-3.5 rounded-xl text-[12.5px] font-medium border transition cursor-pointer ${
+                className={`py-2.5 px-2.5 rounded-xl text-[12px] font-medium border transition cursor-pointer ${
                   settings.vignette
                     ? 'bg-white/15 border-white/30 text-white'
                     : 'bg-white/[0.03] border-white/10 text-zinc-400'
@@ -473,13 +695,24 @@ export const InAppSettingsPopover: React.FC<InAppSettingsPopoverProps> = ({
               <button
                 type="button"
                 onClick={() => onUpdateSettings({ filmGrain: !settings.filmGrain })}
-                className={`py-2.5 px-3.5 rounded-xl text-[12.5px] font-medium border transition cursor-pointer ${
+                className={`py-2.5 px-2.5 rounded-xl text-[12px] font-medium border transition cursor-pointer ${
                   settings.filmGrain
                     ? 'bg-white/15 border-white/30 text-white'
                     : 'bg-white/[0.03] border-white/10 text-zinc-400'
                 }`}
               >
-                Film Grain: {settings.filmGrain ? 'ON' : 'OFF'}
+                Grain: {settings.filmGrain ? 'ON' : 'OFF'}
+              </button>
+              <button
+                type="button"
+                onClick={() => onUpdateSettings({ ambientAurora: !settings.ambientAurora })}
+                className={`py-2.5 px-2.5 rounded-xl text-[12px] font-medium border transition cursor-pointer ${
+                  settings.ambientAurora
+                    ? 'bg-white/15 border-white/30 text-white'
+                    : 'bg-white/[0.03] border-white/10 text-zinc-400'
+                }`}
+              >
+                Aurora: {settings.ambientAurora ? 'ON' : 'OFF'}
               </button>
             </div>
 
@@ -499,13 +732,16 @@ export const InAppSettingsPopover: React.FC<InAppSettingsPopoverProps> = ({
                     { id: 'none', label: 'Off' },
                     { id: 'dust', label: 'Warm Dust' },
                     { id: 'bokeh', label: 'Soft Bokeh' },
+                    { id: 'rain', label: 'Glass Rain' },
+                    { id: 'petals', label: 'Sakura Petals' },
+                    { id: 'embers', label: 'Warm Embers' },
                   ] as { id: AmbientParticles; label: string }[]
                 ).map((p) => (
                   <button
                     key={p.id}
                     type="button"
                     onClick={() => onUpdateSettings({ ambientParticles: p.id })}
-                    className={`py-2.5 rounded-xl text-[12px] font-medium border transition cursor-pointer ${
+                    className={`py-2 rounded-xl text-[11.5px] font-medium border transition cursor-pointer ${
                       settings.ambientParticles === p.id
                         ? 'bg-white/15 border-white/30 text-white'
                         : 'bg-white/[0.03] border-white/10 text-zinc-400 hover:text-zinc-200'
@@ -606,6 +842,8 @@ export const InAppSettingsPopover: React.FC<InAppSettingsPopoverProps> = ({
                   [
                     { id: 'carousel', label: '3D Carousel' },
                     { id: 'vinyl', label: 'Vinyl Disc' },
+                    { id: 'cassette', label: 'Cassette Deck' },
+                    { id: 'poster', label: 'Poster Frame' },
                     { id: 'minimal', label: 'Minimal' },
                   ] as { id: StageStyle; label: string }[]
                 ).map((s) => (
@@ -613,7 +851,7 @@ export const InAppSettingsPopover: React.FC<InAppSettingsPopoverProps> = ({
                     key={s.id}
                     type="button"
                     onClick={() => onUpdateSettings({ stageStyle: s.id })}
-                    className={`py-2.5 rounded-xl text-[12px] font-medium border transition cursor-pointer ${
+                    className={`py-2 px-1.5 rounded-xl text-[11.5px] font-medium border transition cursor-pointer ${
                       settings.stageStyle === s.id
                         ? 'bg-white/15 border-white/30 text-white'
                         : 'bg-white/[0.03] border-white/10 text-zinc-400 hover:text-zinc-200'
@@ -678,6 +916,34 @@ export const InAppSettingsPopover: React.FC<InAppSettingsPopoverProps> = ({
                     }`}
                   >
                     {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Clock Style */}
+            <div className="space-y-1.5">
+              <label className="text-[10.5px] font-semibold uppercase tracking-wider text-zinc-400">
+                Clock Style
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                {(
+                  [
+                    { id: 'digital', label: 'Clean Digital' },
+                    { id: 'flip', label: 'Retro Flip Cards' },
+                  ] as { id: ClockStyle; label: string }[]
+                ).map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => onUpdateSettings({ clockStyle: c.id })}
+                    className={`py-2.5 rounded-xl text-[12px] font-medium border transition cursor-pointer ${
+                      (settings.clockStyle || 'digital') === c.id
+                        ? 'bg-white/15 border-white/30 text-white'
+                        : 'bg-white/[0.03] border-white/10 text-zinc-400 hover:text-zinc-200'
+                    }`}
+                  >
+                    {c.label}
                   </button>
                 ))}
               </div>
@@ -755,6 +1021,32 @@ export const InAppSettingsPopover: React.FC<InAppSettingsPopoverProps> = ({
                   }`}
                 >
                   {settings.showMiniLyricLine ? 'ON' : 'OFF'}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  onUpdateSettings({ romanizeLyrics: !settings.romanizeLyrics })
+                }
+                className="w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-2xl bg-white/[0.04] hover:bg-white/[0.07] border border-white/10 text-left transition cursor-pointer"
+              >
+                <div className="min-w-0">
+                  <div className="text-[12px] font-medium text-zinc-200">
+                    Auto-Romanize Lyrics
+                  </div>
+                  <div className="text-[10px] text-zinc-400 truncate">
+                    Pronunciation guides for Korean & Japanese lines
+                  </div>
+                </div>
+                <span
+                  className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border shrink-0 transition ${
+                    settings.romanizeLyrics
+                      ? 'bg-white/15 border-white/30 text-white'
+                      : 'bg-black/35 border-white/10 text-zinc-500'
+                  }`}
+                >
+                  {settings.romanizeLyrics ? 'ON' : 'OFF'}
                 </span>
               </button>
 
@@ -951,6 +1243,400 @@ export const InAppSettingsPopover: React.FC<InAppSettingsPopoverProps> = ({
                   {uploadStatus}
                 </p>
               )}
+            </div>
+          </>
+        )}
+
+        {activeTab === 'sound' && (
+          <>
+            {/* Cozy Soundscapes */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-[10.5px] font-semibold uppercase tracking-wider text-zinc-400">
+                  Cozy Background Sounds
+                </span>
+                {anyAmbientActive && (
+                  <button
+                    type="button"
+                    onClick={onMuteAmbient}
+                    className="text-[11px] text-zinc-400 hover:text-white transition cursor-pointer"
+                  >
+                    Turn All Off
+                  </button>
+                )}
+              </div>
+
+              {/* 1-Tap Cozy Mixes */}
+              <div className="grid grid-cols-2 gap-1.5">
+                {COZY_AMBIENT_MIXES.map((mix) => {
+                  const isActiveMix =
+                    ambientLevels.rain === mix.levels.rain &&
+                    ambientLevels.vinyl === mix.levels.vinyl &&
+                    ambientLevels.fireplace === mix.levels.fireplace &&
+                    ambientLevels.cafe === mix.levels.cafe;
+                  return (
+                    <button
+                      key={mix.id}
+                      type="button"
+                      onClick={() => onApplyAmbientMix(mix.levels)}
+                      className={`px-2.5 py-1.5 rounded-xl border text-[11px] font-medium transition cursor-pointer ${
+                        isActiveMix
+                          ? 'bg-white/15 border-white/30 text-white'
+                          : 'bg-white/[0.04] hover:bg-white/[0.1] border-white/10 text-zinc-300'
+                      }`}
+                    >
+                      {mix.label}
+                    </button>
+                  );
+                })}
+                <button
+                  type="button"
+                  onClick={onMuteAmbient}
+                  className="px-2.5 py-1.5 rounded-xl border border-white/10 bg-white/[0.03] hover:bg-white/[0.09] text-[11px] font-medium text-zinc-400 hover:text-zinc-200 transition cursor-pointer"
+                >
+                  Clear All
+                </button>
+              </div>
+
+              {(
+                [
+                  { id: 'rain', label: 'Soft Rain', icon: <CloudRain className="w-3.5 h-3.5 text-sky-300" /> },
+                  { id: 'vinyl', label: 'Vinyl Crackle', icon: <Disc className="w-3.5 h-3.5 text-amber-300" /> },
+                  { id: 'fireplace', label: 'Warm Fireplace', icon: <Flame className="w-3.5 h-3.5 text-orange-400" /> },
+                  { id: 'cafe', label: 'Cozy Cafe Murmur', icon: <Coffee className="w-3.5 h-3.5 text-emerald-300" /> },
+                ] as { id: AmbientSoundChannel; label: string; icon: React.ReactNode }[]
+              ).map((ch) => (
+                <div key={ch.id} className="space-y-1">
+                  <div className="flex items-center justify-between text-[11.5px]">
+                    <span className="flex items-center gap-1.5 text-zinc-300">
+                      {ch.icon}
+                      <span>{ch.label}</span>
+                    </span>
+                    <span className="font-mono text-zinc-200">{ambientLevels[ch.id]}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    value={ambientLevels[ch.id]}
+                    onChange={(e) => onUpdateAmbientLevel(ch.id, Number(e.target.value))}
+                    className="w-full h-1.5 bg-zinc-800 rounded-lg cursor-pointer"
+                    style={{ accentColor: 'var(--aesthetic-accent-strong, #C28356)' }}
+                  />
+                </div>
+              ))}
+              <p className="text-[10.5px] text-zinc-500">
+                Mixes softly behind your music and pauses automatically when you pause playback.
+              </p>
+            </div>
+
+            {/* Sleep Timer */}
+            <div className="space-y-2.5 pt-3 border-t border-white/10">
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5 text-[10.5px] font-semibold uppercase tracking-wider text-zinc-400">
+                  <Moon className="w-3.5 h-3.5" />
+                  <span>Sleep Timer</span>
+                </span>
+                {sleepMode !== 'off' && (
+                  <button
+                    type="button"
+                    onClick={onCancelSleepTimer}
+                    className="text-[11px] text-red-300 hover:text-red-200 cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                )}
+              </div>
+
+              <div className="grid grid-cols-5 gap-1.5">
+                {([15, 30, 45, 60] as number[]).map((mins) => (
+                  <button
+                    key={mins}
+                    type="button"
+                    onClick={() => onStartSleepTimer(mins)}
+                    className="py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.1] border border-white/10 text-[11px] font-medium text-zinc-200 transition cursor-pointer"
+                  >
+                    {mins}m
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => onStartSleepTimer('end-of-track')}
+                  className={`py-1.5 rounded-xl border text-[10.5px] font-medium transition cursor-pointer ${
+                    sleepMode === 'end-of-track'
+                      ? 'bg-white/15 border-white/30 text-white'
+                      : 'bg-white/[0.04] hover:bg-white/[0.1] border-white/10 text-zinc-200'
+                  }`}
+                >
+                  End Track
+                </button>
+              </div>
+              {sleepMode === 'countdown' && (
+                <p className="text-[11px] text-emerald-300/90">
+                  Music fades out smoothly and pauses in {formatCountdownMmSs(sleepRemainingMs)}.
+                </p>
+              )}
+              {sleepMode === 'end-of-track' && (
+                <p className="text-[11px] text-emerald-300/90">
+                  Music will pause automatically right after this song ends.
+                </p>
+              )}
+            </div>
+
+            {/* Study / Focus Timer (Pomodoro) */}
+            <div className="space-y-2.5 pt-3 border-t border-white/10">
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5 text-[10.5px] font-semibold uppercase tracking-wider text-zinc-400">
+                  <Timer className="w-3.5 h-3.5" />
+                  <span>Focus Timer</span>
+                </span>
+                {pomodoro.active && (
+                  <button
+                    type="button"
+                    onClick={onDismissPomodoro}
+                    className="text-[11px] text-zinc-400 hover:text-white cursor-pointer"
+                  >
+                    Hide Pill
+                  </button>
+                )}
+              </div>
+
+              <div className="flex items-center justify-between px-3 py-2 rounded-2xl bg-white/[0.04] border border-white/10">
+                <div>
+                  <div className="text-[11px] font-semibold text-zinc-200">
+                    {pomodoro.phase === 'focus' ? 'Study Focus' : 'Short Break'}
+                  </div>
+                  <div className="text-sm font-mono font-semibold text-white">
+                    {formatCountdownMmSs(pomodoro.remainingMs)}
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={onTogglePomodoro}
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white/15 hover:bg-white/25 text-[11px] font-medium text-white transition cursor-pointer"
+                  >
+                    {pomodoro.running ? (
+                      <>
+                        <Pause className="w-3 h-3" />
+                        <span>Pause</span>
+                      </>
+                    ) : (
+                      <>
+                        <Play className="w-3 h-3" />
+                        <span>Start</span>
+                      </>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onResetPomodoro(pomodoro.phase === 'focus' ? 'break' : 'focus')
+                    }
+                    className="px-2.5 py-1.5 rounded-xl bg-white/[0.05] hover:bg-white/10 border border-white/10 text-[11px] text-zinc-300 transition cursor-pointer"
+                  >
+                    {pomodoro.phase === 'focus' ? '5m Break' : '25m Focus'}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Playback Studio: Speed, Pitch & A-B Loop */}
+            <div className="space-y-3 pt-3 border-t border-white/10">
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5 text-[10.5px] font-semibold uppercase tracking-wider text-zinc-400">
+                  <Gauge className="w-3.5 h-3.5" />
+                  <span>Playback Speed & Pitch</span>
+                </span>
+                {playbackSpeed !== 1 && (
+                  <button
+                    type="button"
+                    onClick={() => onChangePlaybackSpeed(1)}
+                    className="text-[11px] text-zinc-400 hover:text-white cursor-pointer"
+                  >
+                    Reset 1.0×
+                  </button>
+                )}
+              </div>
+
+              <SliderControl
+                label="Speed"
+                valueLabel={`${playbackSpeed.toFixed(2)}×`}
+                min={75}
+                max={150}
+                value={Math.round(playbackSpeed * 100)}
+                onChange={(pct) => onChangePlaybackSpeed(Number((pct / 100).toFixed(2)))}
+              />
+
+              <div className="flex items-center gap-1.5">
+                {[0.85, 1.0, 1.15, 1.25].map((presetSpeed) => (
+                  <button
+                    key={presetSpeed}
+                    type="button"
+                    onClick={() => onChangePlaybackSpeed(presetSpeed)}
+                    className={`flex-1 py-1.5 rounded-xl border text-[11px] font-medium transition cursor-pointer ${
+                      Math.abs(playbackSpeed - presetSpeed) < 0.02
+                        ? 'bg-white/15 border-white/30 text-white'
+                        : 'bg-white/[0.03] border-white/10 text-zinc-300 hover:bg-white/[0.08]'
+                    }`}
+                  >
+                    {presetSpeed}×
+                  </button>
+                ))}
+              </div>
+
+              <button
+                type="button"
+                onClick={onTogglePreservePitch}
+                className="w-full flex items-center justify-between px-3 py-2.5 rounded-2xl bg-white/[0.03] hover:bg-white/[0.07] border border-white/10 transition cursor-pointer"
+              >
+                <div className="text-left">
+                  <div className="text-[12px] font-medium text-zinc-200">
+                    Vinyl Pitch Mode (Slowed = Deeper Voice)
+                  </div>
+                  <div className="text-[10px] text-zinc-500">
+                    {!preservePitch
+                      ? 'Active — pitch shifts naturally with speed'
+                      : 'Off — voice pitch stays normal'}
+                  </div>
+                </div>
+                <span
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                    !preservePitch
+                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/30'
+                      : 'bg-white/10 text-zinc-400'
+                  }`}
+                >
+                  {!preservePitch ? 'ON' : 'OFF'}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  onUpdateSettings({ softAudioFade: !(settings.softAudioFade ?? true) })
+                }
+                className="w-full flex items-center justify-between px-3 py-2.5 rounded-2xl bg-white/[0.03] hover:bg-white/[0.07] border border-white/10 transition cursor-pointer"
+              >
+                <div className="text-left">
+                  <div className="text-[12px] font-medium text-zinc-200">
+                    Soft-Fade Audio on Play &amp; Skip
+                  </div>
+                  <div className="text-[10px] text-zinc-500">
+                    {(settings.softAudioFade ?? true)
+                      ? 'Smooth gentle ramp — no harsh volume pops'
+                      : 'Instant hard start and stop'}
+                  </div>
+                </div>
+                <span
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                    (settings.softAudioFade ?? true)
+                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/30'
+                      : 'bg-white/10 text-zinc-400'
+                  }`}
+                >
+                  {(settings.softAudioFade ?? true) ? 'ON' : 'OFF'}
+                </span>
+              </button>
+
+              {/* A-B Section Loop */}
+              <div className="space-y-2 pt-2 border-t border-white/10">
+                <div className="flex items-center justify-between">
+                  <span className="flex items-center gap-1.5 text-[10.5px] font-semibold uppercase tracking-wider text-zinc-400">
+                    <Repeat className="w-3.5 h-3.5" />
+                    <span>Loop Part of Song (A–B)</span>
+                  </span>
+                  {(abLoop.aSec !== null || abLoop.bSec !== null) && (
+                    <button
+                      type="button"
+                      onClick={onClearAbLoop}
+                      className="text-[11px] text-red-300 hover:text-red-200 cursor-pointer"
+                    >
+                      Clear Loop
+                    </button>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => onSetAbLoopPoint('a')}
+                    className="px-3 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.1] border border-white/10 text-left transition cursor-pointer"
+                  >
+                    <div className="text-[10px] text-zinc-400">Mark Start (A)</div>
+                    <div className="text-xs font-mono font-semibold text-white">
+                      {abLoop.aSec !== null ? formatShortSeconds(abLoop.aSec) : 'Tap at start'}
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onSetAbLoopPoint('b')}
+                    className="px-3 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.1] border border-white/10 text-left transition cursor-pointer"
+                  >
+                    <div className="text-[10px] text-zinc-400">Mark End (B)</div>
+                    <div className="text-xs font-mono font-semibold text-white">
+                      {abLoop.bSec !== null ? formatShortSeconds(abLoop.bSec) : 'Tap at end'}
+                    </div>
+                  </button>
+                </div>
+                <p className="text-[10.5px] text-zinc-500">
+                  Repeats your chosen chorus or solo automatically. Clears when the song changes.
+                </p>
+              </div>
+
+              {/* Per-Song Skip Intro / Outro Saver */}
+              <div className="space-y-2 pt-2 border-t border-white/10">
+                <div className="flex items-center justify-between">
+                  <span className="flex items-center gap-1.5 text-[10.5px] font-semibold uppercase tracking-wider text-zinc-400">
+                    <Scissors className="w-3.5 h-3.5" />
+                    <span>Skip Video Intro / Outro</span>
+                  </span>
+                  {(trackTrim?.startSec !== undefined || trackTrim?.endSec !== undefined) && (
+                    <button
+                      type="button"
+                      onClick={onClearTrackTrim}
+                      className="text-[11px] text-red-300 hover:text-red-200 cursor-pointer"
+                    >
+                      Clear Trim
+                    </button>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    disabled={!track.videoId || track.duration <= 0}
+                    onClick={() => onMarkTrackTrim('start')}
+                    className="px-3 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.1] disabled:opacity-45 border border-white/10 text-left transition cursor-pointer"
+                  >
+                    <div className="text-[10px] text-zinc-400">Skip Intro (Start Here)</div>
+                    <div className="text-xs font-mono font-semibold text-white">
+                      {trackTrim?.startSec !== undefined
+                        ? formatShortSeconds(trackTrim.startSec)
+                        : 'Tap at drop'}
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!track.videoId || track.duration <= 0}
+                    onClick={() => onMarkTrackTrim('end')}
+                    className="px-3 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.1] disabled:opacity-45 border border-white/10 text-left transition cursor-pointer"
+                  >
+                    <div className="text-[10px] text-zinc-400">Skip Outro (End Here)</div>
+                    <div className="text-xs font-mono font-semibold text-white">
+                      {trackTrim?.endSec !== undefined
+                        ? formatShortSeconds(trackTrim.endSec)
+                        : 'Tap before end'}
+                    </div>
+                  </button>
+                </div>
+
+                <p className="text-[10.5px] text-zinc-500">
+                  {track.videoId
+                    ? 'Remembers this song forever — automatically jumps past long intros and skits.'
+                    : 'Play a song on YouTube Music to save custom intro/outro skip points.'}
+                </p>
+              </div>
             </div>
           </>
         )}

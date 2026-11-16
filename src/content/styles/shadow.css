@@ -49,6 +49,18 @@
   background: rgba(255, 255, 255, 0.32);
 }
 
+/* Hide scrollbars cleanly inside horizontal pill/chip strips */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
 /* Equalizer bar animations */
 @keyframes eqPulse1 {
   0%, 100% { height: 5px; }
@@ -139,6 +151,42 @@
   will-change: transform;
 }
 
+.animate-cassette-spin {
+  animation: vinylSpin 2.6s linear infinite;
+  will-change: transform;
+}
+
+/* Slow translucent aurora color ribbons */
+@keyframes auroraDriftA {
+  0%,
+  100% {
+    transform: translate3d(-6%, -4%, 0px) scale(1) rotate(0deg);
+  }
+  50% {
+    transform: translate3d(8%, 6%, 0px) scale(1.14) rotate(12deg);
+  }
+}
+
+@keyframes auroraDriftB {
+  0%,
+  100% {
+    transform: translate3d(6%, 5%, 0px) scale(1.06) rotate(0deg);
+  }
+  50% {
+    transform: translate3d(-9%, -6%, 0px) scale(0.94) rotate(-14deg);
+  }
+}
+
+.animate-aurora-a {
+  animation: auroraDriftA 22s ease-in-out infinite;
+  will-change: transform;
+}
+
+.animate-aurora-b {
+  animation: auroraDriftB 28s ease-in-out infinite;
+  will-change: transform;
+}
+
 /* GPU-light floating ambient dust / twilight bokeh particles */
 @keyframes ambientParticleFloat {
   0%,
@@ -152,8 +200,78 @@
   }
 }
 
+@keyframes rainFall {
+  0% {
+    transform: translate3d(0px, -12vh, 0px) rotate(11deg);
+    opacity: 0;
+  }
+  12% {
+    opacity: var(--p-opacity-max, 0.42);
+  }
+  88% {
+    opacity: var(--p-opacity-max, 0.35);
+  }
+  100% {
+    transform: translate3d(-44px, 114vh, 0px) rotate(11deg);
+    opacity: 0;
+  }
+}
+
+@keyframes petalDrift {
+  0% {
+    transform: translate3d(0px, -10vh, 0px) rotate(0deg);
+    opacity: 0;
+  }
+  12% {
+    opacity: var(--p-opacity-max, 0.68);
+  }
+  50% {
+    transform: translate3d(var(--p-dx, 42px), 52vh, 0px) rotate(165deg);
+    opacity: var(--p-opacity-max, 0.68);
+  }
+  88% {
+    opacity: var(--p-opacity-max, 0.55);
+  }
+  100% {
+    transform: translate3d(var(--p-dx2, -18px), 112vh, 0px) rotate(330deg);
+    opacity: 0;
+  }
+}
+
+@keyframes emberRise {
+  0% {
+    transform: translate3d(0px, 6vh, 0px) scale(0.95);
+    opacity: 0;
+  }
+  15% {
+    opacity: var(--p-opacity-max, 0.78);
+  }
+  70% {
+    opacity: var(--p-opacity-min, 0.42);
+  }
+  100% {
+    transform: translate3d(var(--p-dx, 24px), -96vh, 0px) scale(0.32);
+    opacity: 0;
+  }
+}
+
 .animate-particle-float {
   animation: ambientParticleFloat var(--p-dur, 18s) ease-in-out var(--p-delay, 0s) infinite;
+  will-change: transform, opacity;
+}
+
+.animate-rain-fall {
+  animation: rainFall var(--p-dur, 1.3s) linear var(--p-delay, 0s) infinite;
+  will-change: transform, opacity;
+}
+
+.animate-petal-drift {
+  animation: petalDrift var(--p-dur, 13s) linear var(--p-delay, 0s) infinite;
+  will-change: transform, opacity;
+}
+
+.animate-ember-rise {
+  animation: emberRise var(--p-dur, 8s) ease-out var(--p-delay, 0s) infinite;
   will-change: transform, opacity;
 }
 

@@ -1,7 +1,10 @@
 import {
   BrowseDetailsData,
+  BrowseShelfItem,
+  BrowseShelfSection,
   BrowseTrackItem,
   LibraryHubSection,
+  PlaylistMembershipOption,
   SearchResultCategory,
 } from './types';
 
@@ -42,6 +45,7 @@ export interface RawBridgeSearchResult {
   videoId?: string;
   playlistId?: string;
   browseId?: string;
+  params?: string;
   isTopResult?: boolean;
   shelfTitle?: string;
   watchEndpoint?: Record<string, unknown>;
@@ -440,6 +444,7 @@ function parseTwoRowItem(
       videoId,
       playlistId,
       browseId,
+      params: (browseEp?.params as string | undefined) || undefined,
       isTopResult: false,
       shelfTitle: shelfTitle || undefined,
       watchEndpoint: effectiveWatchEp || undefined,
@@ -905,25 +910,120 @@ export function parseBrowseDetails(
   const sections = flattenSectionEntries(rawSections);
 
   const tracks: BrowseTrackItem[] = [];
+  const shelves: BrowseShelfSection[] = [];
+  const seenShelfTitles = new Set<string>();
+  let artistTracksCollected = false;
   let moreTracksBrowseEndpoint: { browseId: string; params?: string } | undefined;
 
-  for (const rec of sections) {
+  const appendShelfItems = (
+    heading: string,
+    rawItems: unknown[],
+    shelfIndex: number
+  ) => {
+    if (!Array.isArray(rawItems) || rawItems.length === 0) return;
+    const mapped: BrowseShelfItem[] = [];
+    const seenCardIds = new Set<string>();
+    for (let i = 0; i < rawItems.length; i++) {
+      const entryRec = rawItems[i] as Record<string, unknown> | undefined;
+      const card = entryRec?.musicTwoRowItemRenderer;
+      if (!card) continue;
+      const parsedCard = parseTwoRowItem(card, i, heading, 'shelf');
+      if (!parsedCard) continue;
+      const r = parsedCard.result;
+      const dedupKey = r.browseId || r.videoId || r.playlistId || r.title;
+      if (!dedupKey || seenCardIds.has(dedupKey)) continue;
+      seenCardIds.add(dedupKey);
+      const itemKind: BrowseShelfItem['kind'] =
+        r.category === 'Artist' ||
+        r.category === 'Playlist' ||
+        r.category === 'Video'
+          ? r.category
+          : 'Album';
+      mapped.push({
+        id: `shelf-${shelfIndex}-${i}-${dedupKey}`,
+        title: r.title,
+        subtitle: r.subtitle,
+        kind: itemKind,
+        artworkUrl: r.artworkUrl,
+        browseId: r.browseId,
+        params: r.params,
+        videoId: r.videoId,
+        playlistId: r.playlistId,
+        watchEndpoint: r.watchEndpoint,
+      });
+      if (mapped.length >= 16) break;
+    }
+
+    const safeHeading = heading.trim() || 'More';
+    if (mapped.length > 0 && !seenShelfTitles.has(safeHeading.toLowerCase())) {
+      seenShelfTitles.add(safeHeading.toLowerCase());
+      shelves.push({ title: safeHeading, items: mapped });
+    }
+  };
+
+  for (let secIdx = 0; secIdx < sections.length; secIdx++) {
+    const rec = sections[secIdx];
+
+    const carousel = rec?.musicCarouselShelfRenderer as
+      | Record<string, unknown>
+      | undefined;
+    if (carousel) {
+      const carouselHeading = runsToText(
+        (
+          (carousel.header as Record<string, unknown> | undefined)
+            ?.musicCarouselShelfBasicRenderer as
+            | { title?: PolymerRuns }
+            | undefined
+        )?.title?.runs
+      );
+      appendShelfItems(
+        carouselHeading,
+        Array.isArray(carousel.contents) ? carousel.contents : [],
+        secIdx
+      );
+      continue;
+    }
+
+    const grid = rec?.gridRenderer as Record<string, unknown> | undefined;
+    if (grid) {
+      const gridHeading = runsToText(
+        (
+          (grid.header as Record<string, unknown> | undefined)
+            ?.gridHeaderRenderer as { title?: PolymerRuns } | undefined
+        )?.title?.runs
+      );
+      appendShelfItems(
+        gridHeading || title || 'Featured',
+        Array.isArray(grid.items) ? grid.items : [],
+        secIdx
+      );
+      continue;
+    }
+
     const shelf =
       (rec?.musicShelfRenderer as Record<string, unknown> | undefined) ||
       (rec?.musicPlaylistShelfRenderer as Record<string, unknown> | undefined) ||
       (rec?.playlistVideoListRenderer as Record<string, unknown> | undefined);
     if (!shelf) continue;
 
-    const shelfHeading = runsToText(
-      (shelf?.title as PolymerRuns | undefined)?.runs
-    ).toLowerCase();
-    // Skip non-track shelves on artist pages (albums/videos/related artists)
+    const rawHeading = runsToText((shelf?.title as PolymerRuns | undefined)?.runs);
+    const shelfHeading = rawHeading.toLowerCase();
+    // Preserve non-track artist shelves (albums/videos/related artists) as horizontal card shelves
     if (
       inferredKind === 'Artist' &&
       shelfHeading &&
       !shelfHeading.includes('song') &&
       !shelfHeading.includes('track')
     ) {
+      appendShelfItems(
+        rawHeading,
+        Array.isArray(shelf?.contents) ? shelf.contents : [],
+        secIdx
+      );
+      continue;
+    }
+
+    if (inferredKind === 'Artist' && artistTracksCollected) {
       continue;
     }
 
@@ -965,6 +1065,7 @@ export function parseBrowseDetails(
     }
 
     if (inferredKind === 'Artist' && tracks.length > 0) {
+      artistTracksCollected = true;
       const bottomEp = (
         shelf?.bottomEndpoint as {
           browseEndpoint?: { browseId?: string; params?: string };
@@ -976,7 +1077,6 @@ export function parseBrowseDetails(
           params: bottomEp.params,
         };
       }
-      break;
     }
   }
 
@@ -984,7 +1084,11 @@ export function parseBrowseDetails(
     headerPlaylistId ||
     tracks.find((t) => t.playlistId)?.playlistId ||
     (browseId === 'FEmusic_liked_videos' ? 'LM' : undefined);
-  const resolvedArtworkUrl = artworkUrl || tracks.find((t) => t.artworkUrl)?.artworkUrl || '';
+  const resolvedArtworkUrl =
+    artworkUrl ||
+    tracks.find((t) => t.artworkUrl)?.artworkUrl ||
+    shelves.find((s) => s.items[0]?.artworkUrl)?.items[0]?.artworkUrl ||
+    '';
 
   return {
     details: {
@@ -1004,6 +1108,7 @@ export function parseBrowseDetails(
           : inferredKind === 'Playlist'
           ? 'Playlist Tracks'
           : 'Tracks',
+      shelves: shelves.length > 0 ? shelves : undefined,
     },
     moreTracksBrowseEndpoint,
   };
@@ -1075,6 +1180,8 @@ const LIBRARY_SECTION_DEFAULT_TITLES: Record<LibraryHubSection, string> = {
   liked: 'Liked Songs',
   playlists: 'Playlists',
   home: 'Quick Picks',
+  explore: 'Moods & Explore',
+  history: 'Recent History',
 };
 
 /**
@@ -1139,6 +1246,32 @@ export function extractLibraryHubItems(
       }
     };
 
+    if (node.musicNavigationButtonRenderer) {
+      const btn = node.musicNavigationButtonRenderer;
+      const label = runsToText(btn.buttonText?.runs);
+      const clickEp =
+        btn.clickCommand?.browseEndpoint || btn.navigationEndpoint?.browseEndpoint;
+      if (label && clickEp?.browseId) {
+        const key = `nav:${clickEp.browseId}:${clickEp.params || label}`;
+        if (!seenKeys.has(key)) {
+          seenKeys.add(key);
+          idxCounter++;
+          results.push({
+            id: `lib-${section}-nav-${idxCounter}-${clickEp.browseId}`,
+            searchIndex: idxCounter - 1,
+            title: label,
+            subtitle: nextShelfTitle || 'Moods & Genres',
+            category: 'Playlist',
+            artworkUrl: '',
+            browseId: clickEp.browseId,
+            params: clickEp.params || undefined,
+            shelfTitle: nextShelfTitle || 'Moods & Genres',
+          });
+        }
+      }
+      return;
+    }
+
     if (node.musicTwoRowItemRenderer) {
       appendCandidate(
         parseTwoRowItem(
@@ -1172,4 +1305,71 @@ export function extractLibraryHubItems(
 
   walk(root);
   return results;
+}
+
+/**
+ * Parses `/youtubei/v1/playlist/get_add_to_playlist` responses into normalized
+ * playlist membership options showing which user playlists already hold the track.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function parseAddToPlaylistOptions(root: any): PlaylistMembershipOption[] {
+  const options: PlaylistMembershipOption[] = [];
+  const seen = new Set<string>();
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function walk(node: any) {
+    if (!node || typeof node !== 'object') return;
+    if (Array.isArray(node)) {
+      node.forEach(walk);
+      return;
+    }
+
+    if (node.playlistAddToOptionRenderer) {
+      const r = node.playlistAddToOptionRenderer;
+      const playlistId = String(
+        r.playlistId ||
+          r.onSelectCommand?.playlistEditEndpoint?.playlistId ||
+          r.addToPlaylistServiceEndpoint?.playlistEditEndpoint?.playlistId ||
+          ''
+      ).trim();
+      const title =
+        runsToText(r.title?.runs) ||
+        String(r.title?.simpleText || '').trim();
+      if (playlistId && title && !seen.has(playlistId)) {
+        seen.add(playlistId);
+        const containsState = String(r.containsSelected || '').toUpperCase();
+        const containsTrack =
+          containsState === 'ALL' ||
+          containsState === 'SOME' ||
+          Boolean(r.isSelected);
+        const rawPrivacy = String(
+          r.privacyIcon?.iconType || r.privacy || ''
+        ).toUpperCase();
+        const privacyStatus = rawPrivacy.includes('PRIVATE')
+          ? 'PRIVATE'
+          : rawPrivacy.includes('UNLISTED')
+          ? 'UNLISTED'
+          : rawPrivacy.includes('PUBLIC')
+          ? 'PUBLIC'
+          : undefined;
+        options.push({
+          playlistId,
+          title,
+          thumbnailUrl: pickBestThumbnail(
+            r.thumbnail?.thumbnails || r.thumbnails?.thumbnails
+          ),
+          containsTrack,
+          privacyStatus,
+        });
+      }
+      return;
+    }
+
+    for (const key of Object.keys(node)) {
+      walk(node[key]);
+    }
+  }
+
+  walk(root);
+  return options;
 }

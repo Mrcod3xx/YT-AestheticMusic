@@ -13,14 +13,17 @@ import {
   CheckCircle2,
   Download,
   Image as ImageIcon,
+  Plus,
 } from 'lucide-react';
 import {
   AestheticSettings,
   AmbientParticles,
   BackgroundMode,
+  ClockStyle,
   LyricsMode,
   PlayerPosition,
   StageStyle,
+  StudioScenePreset,
   ThemePreset,
 } from '../shared/types';
 import { DEFAULT_SETTINGS } from '../shared/defaultSettings';
@@ -30,6 +33,12 @@ import {
   ALL_THEME_ORDER,
   THEME_DEFINITIONS,
 } from '../shared/themeTokens';
+import {
+  applySceneSnapshot,
+  BUILT_IN_SCENE_PRESETS,
+  buildCustomScenePreset,
+  MAX_CUSTOM_SCENES,
+} from '../shared/scenePresets';
 import {
   applyThemePreset,
   createSettingsExportPayload,
@@ -103,6 +112,7 @@ export const OptionsApp: React.FC = () => {
   const [settings, setSettings] = useState<AestheticSettings>(DEFAULT_SETTINGS);
   const [wallpaperStatus, setWallpaperStatus] = useState<string>('');
   const [backupStatus, setBackupStatus] = useState<{ text: string; isError?: boolean } | null>(null);
+  const [newSceneName, setNewSceneName] = useState('');
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const importInputRef = useRef<HTMLInputElement | null>(null);
@@ -175,8 +185,12 @@ export const OptionsApp: React.FC = () => {
       const imported = await importSettings(rawText);
       setSettings(imported);
       await broadcastToYTM({ type: 'SETTINGS_UPDATED', settings: imported });
+      const sceneCountNote =
+        imported.customScenes.length > 0
+          ? ` (including ${imported.customScenes.length} saved scene${imported.customScenes.length === 1 ? '' : 's'})`
+          : '';
       setBackupStatus({
-        text: `Imported settings from "${file.name}".`,
+        text: `Imported settings${sceneCountNote} from "${file.name}".`,
       });
     } catch (err) {
       setBackupStatus({
@@ -324,6 +338,131 @@ export const OptionsApp: React.FC = () => {
               <span>Theme Presets & Layout</span>
             </div>
 
+            {/* 1-Click Studio Scene Presets */}
+            <div className="space-y-2.5 pb-4 border-b border-white/10">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-semibold text-zinc-200">Studio Scene Presets</span>
+                <span className="text-[11px] text-zinc-500">1-click room mood</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {BUILT_IN_SCENE_PRESETS.map((scene: StudioScenePreset) => {
+                  const def = THEME_DEFINITIONS[scene.snapshot.theme];
+                  return (
+                    <button
+                      key={scene.id}
+                      type="button"
+                      onClick={() => update(applySceneSnapshot(scene.snapshot, settings))}
+                      className="p-2.5 rounded-xl border border-white/10 bg-white/[0.02] hover:bg-white/[0.06] text-left transition cursor-pointer"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="w-3.5 h-3.5 rounded-full border border-white/25 shrink-0"
+                          style={{ background: def?.previewGradient || '#C28356' }}
+                        />
+                        <span className="text-xs font-semibold text-white truncate">
+                          {scene.name}
+                        </span>
+                      </div>
+                      <p className="text-[10.5px] text-zinc-400 line-clamp-1 mt-0.5">
+                        {scene.tagline}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {settings.customScenes.length > 0 && (
+                <div className="space-y-1.5 pt-1">
+                  <div className="text-[10.5px] uppercase tracking-wider text-zinc-500">
+                    My Saved Scenes ({settings.customScenes.length}/{MAX_CUSTOM_SCENES})
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {settings.customScenes.map((scene) => (
+                      <div
+                        key={scene.id}
+                        className="flex items-center gap-1 rounded-xl bg-white/[0.03] border border-white/10 px-2.5 py-1.5"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => update(applySceneSnapshot(scene.snapshot, settings))}
+                          className="flex-1 min-w-0 text-left text-xs text-zinc-200 hover:text-white truncate cursor-pointer"
+                        >
+                          {scene.name}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            update({
+                              customScenes: settings.customScenes.filter((s) => s.id !== scene.id),
+                            })
+                          }
+                          title="Delete saved scene"
+                          className="w-6 h-6 rounded-lg flex items-center justify-center text-zinc-400 hover:text-red-300 hover:bg-red-500/15 transition cursor-pointer shrink-0"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center gap-2 pt-1">
+                <input
+                  type="text"
+                  maxLength={28}
+                  value={newSceneName}
+                  onChange={(e) => setNewSceneName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (
+                      e.key === 'Enter' &&
+                      newSceneName.trim() &&
+                      settings.customScenes.length < MAX_CUSTOM_SCENES
+                    ) {
+                      e.preventDefault();
+                      const created = buildCustomScenePreset(newSceneName.trim(), settings);
+                      void update({
+                        customScenes: [...settings.customScenes, created].slice(
+                          0,
+                          MAX_CUSTOM_SCENES
+                        ),
+                      });
+                      setNewSceneName('');
+                    }
+                  }}
+                  placeholder={
+                    settings.customScenes.length >= MAX_CUSTOM_SCENES
+                      ? 'Limit reached (6 saved scenes)'
+                      : 'Name current look to save...'
+                  }
+                  disabled={settings.customScenes.length >= MAX_CUSTOM_SCENES}
+                  className="flex-1 min-w-0 rounded-xl px-3 py-1.5 bg-white/[0.05] border border-white/10 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-white/25 disabled:opacity-50"
+                />
+                <button
+                  type="button"
+                  disabled={
+                    !newSceneName.trim() ||
+                    settings.customScenes.length >= MAX_CUSTOM_SCENES
+                  }
+                  onClick={() => {
+                    if (!newSceneName.trim()) return;
+                    const created = buildCustomScenePreset(newSceneName.trim(), settings);
+                    void update({
+                      customScenes: [...settings.customScenes, created].slice(
+                        0,
+                        MAX_CUSTOM_SCENES
+                      ),
+                    });
+                    setNewSceneName('');
+                  }}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 disabled:opacity-40 text-xs font-medium text-white transition cursor-pointer disabled:cursor-not-allowed shrink-0"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Save Scene</span>
+                </button>
+              </div>
+            </div>
+
             <div className="grid grid-cols-2 gap-2.5">
               {themeOrder.map((id) => {
                 const def = THEME_DEFINITIONS[id];
@@ -381,6 +520,19 @@ export const OptionsApp: React.FC = () => {
                 onChange={(v) => update({ showSearchBar: v })}
               />
               <div className="flex items-center justify-between gap-4 pt-1">
+                <span className="text-sm text-zinc-200">Clock Display Style</span>
+                <select
+                  value={settings.clockStyle || 'digital'}
+                  onChange={(e) =>
+                    update({ clockStyle: e.target.value as ClockStyle })
+                  }
+                  className="bg-zinc-900 border border-white/10 rounded-xl px-3 py-1.5 text-xs text-zinc-100 outline-none focus:border-[#C28356]"
+                >
+                  <option value="digital">Clean Digital</option>
+                  <option value="flip">Retro Flip Cards</option>
+                </select>
+              </div>
+              <div className="flex items-center justify-between gap-4 pt-1">
                 <span className="text-sm text-zinc-200">Center Stage Style</span>
                 <select
                   value={settings.stageStyle}
@@ -391,6 +543,8 @@ export const OptionsApp: React.FC = () => {
                 >
                   <option value="carousel">3D Coverflow Carousel</option>
                   <option value="vinyl">Spinning Vinyl Showcase</option>
+                  <option value="cassette">Retro Cassette Tape Deck</option>
+                  <option value="poster">Editorial Poster Frame</option>
                   <option value="minimal">Minimal Center Card</option>
                 </select>
               </div>
@@ -650,11 +804,14 @@ export const OptionsApp: React.FC = () => {
                   <option value="none">Off</option>
                   <option value="dust">Warm Dust</option>
                   <option value="bokeh">Soft Bokeh</option>
+                  <option value="rain">Glass Rain</option>
+                  <option value="petals">Sakura Petals</option>
+                  <option value="embers">Warm Embers</option>
                 </select>
               </div>
               <div className="flex justify-between items-center text-xs pt-1">
-                <span className="text-zinc-400">Vignette & Film Grain</span>
-                <div className="flex items-center gap-4">
+                <span className="text-zinc-400">Atmosphere Overlays</span>
+                <div className="flex items-center gap-3.5">
                   <label className="flex items-center gap-1.5 text-zinc-300 cursor-pointer">
                     <input
                       type="checkbox"
@@ -672,6 +829,15 @@ export const OptionsApp: React.FC = () => {
                       className="accent-[#C28356]"
                     />
                     <span>Grain</span>
+                  </label>
+                  <label className="flex items-center gap-1.5 text-zinc-300 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={settings.ambientAurora}
+                      onChange={(e) => update({ ambientAurora: e.target.checked })}
+                      className="accent-[#C28356]"
+                    />
+                    <span>Aurora</span>
                   </label>
                 </div>
               </div>
@@ -778,6 +944,11 @@ export const OptionsApp: React.FC = () => {
                   onChange={(v) => update({ showVolumeControl: v })}
                 />
                 <ToggleRow
+                  label="Soft-Fade Audio on Play, Pause & Skip"
+                  checked={settings.softAudioFade ?? true}
+                  onChange={(v) => update({ softAudioFade: v })}
+                />
+                <ToggleRow
                   label="Enable Lyrics Integration"
                   checked={settings.lyricsEnabled}
                   onChange={(v) => update({ lyricsEnabled: v })}
@@ -791,6 +962,11 @@ export const OptionsApp: React.FC = () => {
                   label="Show Mini 1-Line Lyric Subtitle When Closed"
                   checked={settings.showMiniLyricLine}
                   onChange={(v) => update({ showMiniLyricLine: v })}
+                />
+                <ToggleRow
+                  label="Auto-Romanize Korean & Japanese Lyrics"
+                  checked={settings.romanizeLyrics}
+                  onChange={(v) => update({ romanizeLyrics: v })}
                 />
               </div>
             </section>

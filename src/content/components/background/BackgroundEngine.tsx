@@ -442,6 +442,35 @@ export const BackgroundEngine: React.FC<BackgroundEngineProps> = ({
         }}
       />
 
+      {/* LAYER 3.5: Optional Ambient Aurora Flow */}
+      {settings.ambientAurora &&
+        !settings.lowGpuMode &&
+        !settings.reducedMotion &&
+        !paused &&
+        settings.backgroundMode !== 'off' && (
+          <div aria-hidden="true" className="absolute inset-0 overflow-hidden mix-blend-screen">
+            <div
+              className="absolute -left-[12%] -top-[18%] w-[72vw] h-[58vh] rounded-full blur-[110px] opacity-[0.26] animate-aurora-a"
+              style={{
+                background: `radial-gradient(ellipse at center, ${
+                  (THEME_DEFINITIONS[settings.theme] || THEME_DEFINITIONS['night-city'])
+                    .accentHighlight
+                } 0%, rgba(56,189,248,0.34) 46%, transparent 74%)`,
+                animationDuration: `${Math.round(24 / Math.max(0.4, settings.animationSpeed || 1))}s`,
+              }}
+            />
+            <div
+              className="absolute -right-[10%] -bottom-[16%] w-[68vw] h-[54vh] rounded-full blur-[115px] opacity-[0.24] animate-aurora-b"
+              style={{
+                background: `radial-gradient(ellipse at center, ${
+                  (THEME_DEFINITIONS[settings.theme] || THEME_DEFINITIONS['night-city']).accent
+                } 0%, rgba(168,85,247,0.32) 48%, transparent 74%)`,
+                animationDuration: `${Math.round(30 / Math.max(0.4, settings.animationSpeed || 1))}s`,
+              }}
+            />
+          </div>
+        )}
+
       {/* LAYER 4: Optional Vignette */}
       {settings.vignette && (
         <div
@@ -463,7 +492,7 @@ export const BackgroundEngine: React.FC<BackgroundEngineProps> = ({
         />
       )}
 
-      {/* LAYER 6: Optional GPU-Light Ambient Dust / Twilight Bokeh Particles */}
+      {/* LAYER 6: Optional GPU-Light Ambient Particles (Dust / Bokeh / Rain / Petals / Embers) */}
       {settings.ambientParticles !== 'none' &&
         !settings.lowGpuMode &&
         !settings.reducedMotion &&
@@ -471,13 +500,97 @@ export const BackgroundEngine: React.FC<BackgroundEngineProps> = ({
         settings.backgroundMode !== 'off' && (
           <div aria-hidden="true" className="absolute inset-0 overflow-hidden">
             {PARTICLE_SPECS.map((p) => {
-              const isBokeh = settings.ambientParticles === 'bokeh';
-              const size = isBokeh ? p.bokehSizePx : p.dustSizePx;
+              const mode = settings.ambientParticles;
               const speedFactor = Math.max(0.4, Math.min(2, settings.animationSpeed || 1));
-              const duration = Math.round((p.durSec / speedFactor) * 10) / 10;
               const themeAccent =
                 (THEME_DEFINITIONS[settings.theme] || THEME_DEFINITIONS['night-city'])
                   .accentHighlight;
+
+              if (mode === 'rain') {
+                const duration = Math.round(((0.95 + (p.id % 5) * 0.16) / speedFactor) * 10) / 10;
+                const streakH = 22 + (p.id % 4) * 7;
+                return (
+                  <span
+                    key={p.id}
+                    className="absolute animate-rain-fall rounded-full"
+                    style={
+                      {
+                        left: `${p.xPct}%`,
+                        top: '0%',
+                        width: '1.5px',
+                        height: `${streakH}px`,
+                        background:
+                          'linear-gradient(180deg, transparent 0%, rgba(196,228,255,0.68) 65%, rgba(255,255,255,0.85) 100%)',
+                        '--p-dur': `${duration}s`,
+                        '--p-delay': `${-((p.id * 0.27) % 1.8)}s`,
+                        '--p-opacity-max': p.warm ? '0.32' : '0.48',
+                      } as React.CSSProperties
+                    }
+                  />
+                );
+              }
+
+              if (mode === 'petals') {
+                const duration = Math.round(((10 + (p.id % 6) * 2.1) / speedFactor) * 10) / 10;
+                const w = 8 + (p.id % 4) * 2;
+                const h = 5 + (p.id % 3) * 1.5;
+                return (
+                  <span
+                    key={p.id}
+                    className="absolute animate-petal-drift"
+                    style={
+                      {
+                        left: `${p.xPct}%`,
+                        top: '0%',
+                        width: `${w}px`,
+                        height: `${h}px`,
+                        borderRadius: '72% 28% 68% 32%',
+                        background: p.warm
+                          ? 'linear-gradient(135deg, rgba(251,182,206,0.88), rgba(244,114,182,0.58))'
+                          : 'linear-gradient(135deg, rgba(255,241,246,0.9), rgba(251,207,232,0.68))',
+                        boxShadow: '0 0 8px rgba(244,114,182,0.22)',
+                        '--p-dx': `${p.dxPx * 2.2}px`,
+                        '--p-dx2': `${-p.dxPx * 1.4}px`,
+                        '--p-dur': `${duration}s`,
+                        '--p-delay': `${p.delaySec}s`,
+                        '--p-opacity-max': '0.68',
+                      } as React.CSSProperties
+                    }
+                  />
+                );
+              }
+
+              if (mode === 'embers') {
+                const duration = Math.round(((6.2 + (p.id % 5) * 1.5) / speedFactor) * 10) / 10;
+                const size = 2.5 + (p.id % 3) * 1.2;
+                return (
+                  <span
+                    key={p.id}
+                    className="absolute rounded-full animate-ember-rise"
+                    style={
+                      {
+                        left: `${p.xPct}%`,
+                        bottom: '2%',
+                        width: `${size}px`,
+                        height: `${size}px`,
+                        background: p.warm
+                          ? `radial-gradient(circle, #fde68a 0%, ${themeAccent} 58%, transparent 100%)`
+                          : 'radial-gradient(circle, #fff7ed 0%, #fb923c 62%, transparent 100%)',
+                        boxShadow: `0 0 10px ${p.warm ? themeAccent : '#fb923c'}`,
+                        '--p-dx': `${p.dxPx * 1.6}px`,
+                        '--p-dur': `${duration}s`,
+                        '--p-delay': `${-((p.id * 0.85) % 9)}s`,
+                        '--p-opacity-min': '0.40',
+                        '--p-opacity-max': '0.82',
+                      } as React.CSSProperties
+                    }
+                  />
+                );
+              }
+
+              const isBokeh = mode === 'bokeh';
+              const size = isBokeh ? p.bokehSizePx : p.dustSizePx;
+              const duration = Math.round((p.durSec / speedFactor) * 10) / 10;
 
               return (
                 <span

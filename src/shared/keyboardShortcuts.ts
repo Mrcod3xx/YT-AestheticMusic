@@ -8,12 +8,15 @@ export type AestheticShortcutAction =
   | 'toggle-eye'
   | 'toggle-sidebar'
   | 'toggle-mute'
+  | 'toggle-pip'
+  | 'save-to-playlist'
   | 'previous-track'
   | 'next-track'
   | 'toggle-shortcuts-help'
   | 'escape';
 
 export type EscapeLayerTarget =
+  | 'playlist-modal'
   | 'settings-popover'
   | 'shortcuts-help'
   | 'browse-modal'
@@ -22,6 +25,7 @@ export type EscapeLayerTarget =
   | 'lyrics-only';
 
 export interface ShortcutUIState {
+  playlistModalOpen?: boolean;
   settingsPopoverOpen: boolean;
   shortcutsHelpOpen: boolean;
   detailsModalOpen: boolean;
@@ -56,6 +60,8 @@ export const SHORTCUT_HELP_ITEMS: ShortcutHelpEntry[] = [
   { keys: ['E'], label: 'Immersive Eye', description: 'Toggle Zen view or Lyrics-only canvas' },
   { keys: ['S'], label: 'Queue Sidebar', description: 'Show or hide Continue Playing panel' },
   { keys: ['M'], label: 'Mute Audio', description: 'Toggle player mute state' },
+  { keys: ['P'], label: 'Mini PiP Player', description: 'Pop out or close the floating mini desk player' },
+  { keys: ['B'], label: 'Save to Playlist', description: 'Add or remove the current song in your YTM playlists' },
   { keys: ['?'], label: 'Shortcut Guide', description: 'Open or close this keyboard shortcut reference' },
   { keys: ['Esc'], label: 'Dismiss Layer', description: 'Close active popover, modal, search list, or Zen view' },
 ];
@@ -66,12 +72,15 @@ const SINGLE_KEY_MAP: Record<string, AestheticShortcutAction> = {
   e: 'toggle-eye',
   s: 'toggle-sidebar',
   m: 'toggle-mute',
+  p: 'toggle-pip',
+  b: 'save-to-playlist',
   '?': 'toggle-shortcuts-help',
   ArrowLeft: 'previous-track',
   ArrowRight: 'next-track',
 };
 
 export function resolveEscapeTarget(state: ShortcutUIState): EscapeLayerTarget | null {
+  if (state.playlistModalOpen) return 'playlist-modal';
   if (state.settingsPopoverOpen) return 'settings-popover';
   if (state.shortcutsHelpOpen) return 'shortcuts-help';
   if (state.detailsModalOpen) return 'browse-modal';

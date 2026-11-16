@@ -5,6 +5,7 @@ import {
   extractSearchRenderers,
   extractTracksFromBrowseShelf,
   inferBrowseKind,
+  parseAddToPlaylistOptions,
   parseBrowseDetails,
 } from '../src/shared/innertubeParsers';
 
@@ -988,5 +989,201 @@ describe('innertubeParsers (Search & Browse Details)', () => {
       videoId: 'lik_909',
     });
     expect(liked[0].watchEndpoint).toMatchObject({ videoId: 'lik_909' });
+  });
+
+  it('extracts Artist discography shelves and Explore Moods navigation pills', () => {
+    const mockArtistWithShelves = {
+      header: {
+        musicImmersiveHeaderRenderer: {
+          title: { runs: [{ text: 'NIKI' }] },
+        },
+      },
+      contents: {
+        singleColumnBrowseResultsRenderer: {
+          tabs: [
+            {
+              tabRenderer: {
+                content: {
+                  sectionListRenderer: {
+                    contents: [
+                      {
+                        musicShelfRenderer: {
+                          title: { runs: [{ text: 'Top songs' }] },
+                          contents: [
+                            {
+                              musicResponsiveListItemRenderer: {
+                                flexColumns: [
+                                  {
+                                    musicResponsiveListItemFlexColumnRenderer: {
+                                      text: {
+                                        runs: [
+                                          {
+                                            text: 'lowkey',
+                                            navigationEndpoint: {
+                                              watchEndpoint: { videoId: 'vidLowkey' },
+                                            },
+                                          },
+                                        ],
+                                      },
+                                    },
+                                  },
+                                ],
+                              },
+                            },
+                          ],
+                        },
+                      },
+                      {
+                        musicCarouselShelfRenderer: {
+                          header: {
+                            musicCarouselShelfBasicRenderer: {
+                              title: { runs: [{ text: 'Albums' }] },
+                            },
+                          },
+                          contents: [
+                            {
+                              musicTwoRowItemRenderer: {
+                                title: { runs: [{ text: 'Nicole' }] },
+                                subtitle: { runs: [{ text: '2022' }] },
+                                navigationEndpoint: {
+                                  browseEndpoint: {
+                                    browseId: 'MPREb_nicole',
+                                    browseEndpointContextSupportedConfigs: {
+                                      browseEndpointContextMusicConfig: {
+                                        pageType: 'MUSIC_PAGE_TYPE_ALBUM',
+                                      },
+                                    },
+                                  },
+                                },
+                              },
+                            },
+                          ],
+                        },
+                      },
+                    ],
+                  },
+                },
+              },
+            },
+          ],
+        },
+      },
+    };
+
+    const artistParsed = parseBrowseDetails(mockArtistWithShelves, 'UC_niki', 'Artist');
+    expect(artistParsed?.details.tracks).toHaveLength(1);
+    expect(artistParsed?.details.shelves).toHaveLength(1);
+    expect(artistParsed?.details.shelves?.[0]).toMatchObject({
+      title: 'Albums',
+    });
+    expect(artistParsed?.details.shelves?.[0].items[0]).toMatchObject({
+      title: 'Nicole',
+      kind: 'Album',
+      browseId: 'MPREb_nicole',
+    });
+
+    const mockExploreMoods = {
+      contents: {
+        singleColumnBrowseResultsRenderer: {
+          tabs: [
+            {
+              tabRenderer: {
+                content: {
+                  sectionListRenderer: {
+                    contents: [
+                      {
+                        gridRenderer: {
+                          header: {
+                            gridHeaderRenderer: {
+                              title: { runs: [{ text: 'Moods & moments' }] },
+                            },
+                          },
+                          items: [
+                            {
+                              musicNavigationButtonRenderer: {
+                                buttonText: { runs: [{ text: 'Late Night' }] },
+                                clickCommand: {
+                                  browseEndpoint: {
+                                    browseId: 'FEmusic_moods_and_genres_category',
+                                    params: 'ggM_late_night',
+                                  },
+                                },
+                              },
+                            },
+                          ],
+                        },
+                      },
+                    ],
+                  },
+                },
+              },
+            },
+          ],
+        },
+      },
+    };
+
+    const exploreItems = extractLibraryHubItems(mockExploreMoods, 'explore');
+    expect(exploreItems).toHaveLength(1);
+    expect(exploreItems[0]).toMatchObject({
+      title: 'Late Night',
+      browseId: 'FEmusic_moods_and_genres_category',
+      params: 'ggM_late_night',
+      category: 'Playlist',
+    });
+  });
+
+  it('parses InnerTube add-to-playlist membership options safely', () => {
+    const mockAddToPlaylistResponse = {
+      contents: [
+        {
+          addToPlaylistRenderer: {
+            playlists: [
+              {
+                playlistAddToOptionRenderer: {
+                  playlistId: 'PL_study_1',
+                  title: { runs: [{ text: 'Late Night Focus' }] },
+                  containsSelected: 'ALL',
+                  privacyIcon: { iconType: 'PRIVACY_PRIVATE' },
+                  thumbnail: {
+                    thumbnails: [{ url: 'https://i.ytimg.com/vi/abc/hqdefault.jpg' }],
+                  },
+                },
+              },
+              {
+                playlistAddToOptionRenderer: {
+                  playlistId: 'PL_drive_2',
+                  title: { simpleText: 'Highway Mix' },
+                  containsSelected: 'NONE',
+                  privacyIcon: { iconType: 'PRIVACY_PUBLIC' },
+                },
+              },
+              {
+                playlistAddToOptionRenderer: {
+                  playlistId: 'PL_study_1',
+                  title: { runs: [{ text: 'Duplicate entry' }] },
+                  containsSelected: 'NONE',
+                },
+              },
+            ],
+          },
+        },
+      ],
+    };
+
+    const options = parseAddToPlaylistOptions(mockAddToPlaylistResponse);
+    expect(options).toHaveLength(2);
+    expect(options[0]).toMatchObject({
+      playlistId: 'PL_study_1',
+      title: 'Late Night Focus',
+      containsTrack: true,
+      privacyStatus: 'PRIVATE',
+    });
+    expect(options[1]).toMatchObject({
+      playlistId: 'PL_drive_2',
+      title: 'Highway Mix',
+      containsTrack: false,
+      privacyStatus: 'PUBLIC',
+    });
   });
 });

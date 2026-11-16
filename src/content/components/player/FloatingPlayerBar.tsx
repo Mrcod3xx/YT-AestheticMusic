@@ -8,6 +8,7 @@ import {
   Repeat1,
   Shuffle,
   Heart,
+  BookmarkPlus,
   MoreHorizontal,
   MessageSquareQuote,
   SlidersHorizontal,
@@ -15,19 +16,31 @@ import {
   Volume2,
   VolumeX,
 } from 'lucide-react';
-import { AestheticSettings, TrackMetadata } from '../../../shared/types';
+import {
+  AbLoopRange,
+  AestheticSettings,
+  TrackMetadata,
+  TrackTrimPoint,
+} from '../../../shared/types';
 
 interface FloatingPlayerBarProps {
   track: TrackMetadata;
   settings: AestheticSettings;
   lyricsOpen: boolean;
   settingsOpen: boolean;
+  playbackSpeed?: number;
+  abLoop?: AbLoopRange;
+  trackTrim?: TrackTrimPoint | null;
+  sleepTimerActive?: boolean;
+  ambientAudioActive?: boolean;
   onTogglePlay: () => void;
   onPrevious: () => void;
   onNext: () => void;
   onToggleRepeat: () => void;
   onToggleShuffle: () => void;
   onToggleLike: () => void;
+  onOpenSaveToPlaylist?: () => void;
+  onOpenSoundTab?: () => void;
   onSeek: (newTimeSeconds: number) => void;
   onVolumeChange: (newVolume: number) => void;
   onToggleMute: () => void;
@@ -49,12 +62,19 @@ export const FloatingPlayerBar: React.FC<FloatingPlayerBarProps> = ({
   settings,
   lyricsOpen,
   settingsOpen,
+  playbackSpeed = 1.0,
+  abLoop,
+  trackTrim = null,
+  sleepTimerActive = false,
+  ambientAudioActive = false,
   onTogglePlay,
   onPrevious,
   onNext,
   onToggleRepeat,
   onToggleShuffle,
   onToggleLike,
+  onOpenSaveToPlaylist,
+  onOpenSoundTab,
   onSeek,
   onVolumeChange,
   onToggleMute,
@@ -242,9 +262,31 @@ export const FloatingPlayerBar: React.FC<FloatingPlayerBarProps> = ({
           />
           <div className="min-w-0 flex-1">
             <div className="flex items-center justify-between gap-2">
-              <span className="text-[14.5px] font-semibold text-white truncate">
-                {track.title}
-              </span>
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className="text-[14.5px] font-semibold text-white truncate">
+                  {track.title}
+                </span>
+                {(Math.abs(playbackSpeed - 1) > 0.01 ||
+                  abLoop?.aSec !== null ||
+                  sleepTimerActive ||
+                  ambientAudioActive) &&
+                  onOpenSoundTab && (
+                    <button
+                      type="button"
+                      onClick={onOpenSoundTab}
+                      title="Open Sound & Playback Studio"
+                      className="px-1.5 py-0.5 rounded-md bg-white/10 hover:bg-white/20 border border-white/15 text-[10px] font-mono text-[var(--aesthetic-accent,#E89B63)] shrink-0 cursor-pointer transition"
+                    >
+                      {abLoop && abLoop.aSec !== null && abLoop.bSec !== null
+                        ? 'A–B'
+                        : Math.abs(playbackSpeed - 1) > 0.01
+                        ? `${playbackSpeed.toFixed(2).replace(/0$/, '')}×`
+                        : sleepTimerActive
+                        ? 'Sleep'
+                        : 'Amb'}
+                    </button>
+                  )}
+              </div>
               <span className="text-[11px] font-mono text-zinc-400 shrink-0">
                 {formatSeconds(displayedTime)} / {formatSeconds(track.duration)}
               </span>
@@ -277,15 +319,68 @@ export const FloatingPlayerBar: React.FC<FloatingPlayerBarProps> = ({
             </div>
           )}
           <div className="w-full h-[5px] group-hover/seek:h-[8px] bg-white/20 rounded-full overflow-hidden transition-all relative">
+            {track.duration > 0 &&
+              abLoop &&
+              abLoop.aSec !== null &&
+              abLoop.bSec !== null && (
+                <div
+                  className="absolute inset-y-0 rounded-full pointer-events-none"
+                  style={{
+                    left: `${Math.min(100, Math.max(0, (abLoop.aSec / track.duration) * 100))}%`,
+                    width: `${Math.max(
+                      1,
+                      Math.min(
+                        100,
+                        ((abLoop.bSec - abLoop.aSec) / track.duration) * 100
+                      )
+                    )}%`,
+                    backgroundColor: 'rgba(var(--aesthetic-accent-hi-rgb, 232, 155, 99), 0.45)',
+                  }}
+                />
+              )}
             <div
-              className="h-full bg-white rounded-full transition-[width] duration-75"
+              className="h-full bg-white rounded-full transition-[width] duration-75 relative z-10"
               style={{ width: `${progressPercent}%` }}
             />
           </div>
+          {track.duration > 0 && abLoop && abLoop.aSec !== null && (
+            <span
+              className="pointer-events-none absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-2 h-2 rounded-full bg-[var(--aesthetic-accent,#E89B63)] shadow border border-black/50 z-20"
+              style={{
+                left: `${Math.min(100, Math.max(0, (abLoop.aSec / track.duration) * 100))}%`,
+              }}
+            />
+          )}
+          {track.duration > 0 && abLoop && abLoop.bSec !== null && (
+            <span
+              className="pointer-events-none absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-2 h-2 rounded-full bg-[var(--aesthetic-accent,#E89B63)] shadow border border-black/50 z-20"
+              style={{
+                left: `${Math.min(100, Math.max(0, (abLoop.bSec / track.duration) * 100))}%`,
+              }}
+            />
+          )}
+          {track.duration > 0 && trackTrim?.startSec !== undefined && (
+            <span
+              title={`Intro skip ends at ${formatSeconds(trackTrim.startSec)}`}
+              className="pointer-events-none absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-[3px] h-3 rounded-full bg-emerald-300 shadow border border-black/60 z-20"
+              style={{
+                left: `${Math.min(100, Math.max(0, (trackTrim.startSec / track.duration) * 100))}%`,
+              }}
+            />
+          )}
+          {track.duration > 0 && trackTrim?.endSec !== undefined && (
+            <span
+              title={`Outro skip starts at ${formatSeconds(trackTrim.endSec)}`}
+              className="pointer-events-none absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-[3px] h-3 rounded-full bg-rose-300 shadow border border-black/60 z-20"
+              style={{
+                left: `${Math.min(100, Math.max(0, (trackTrim.endSec / track.duration) * 100))}%`,
+              }}
+            />
+          )}
         </div>
       </div>
 
-      {/* Right: Utility Action Icons (Like, Queue, Lyrics, Settings, Theme, Volume) */}
+      {/* Right: Utility Action Icons (Like, Save to Playlist, Queue, Lyrics, Settings, Theme, Volume) */}
       <div className="flex items-center gap-1 shrink-0">
         {settings.showLikeButton && (
           <button
@@ -300,6 +395,22 @@ export const FloatingPlayerBar: React.FC<FloatingPlayerBarProps> = ({
             <Heart
               className={`w-5 h-5 ${track.isLiked ? 'fill-current' : ''}`}
             />
+          </button>
+        )}
+
+        {onOpenSaveToPlaylist && (
+          <button
+            type="button"
+            onClick={onOpenSaveToPlaylist}
+            disabled={!track.videoId}
+            title={
+              track.videoId
+                ? 'Save song to playlist (B)'
+                : 'Save to playlist unavailable for sample track'
+            }
+            className="w-10 h-10 rounded-full flex items-center justify-center text-zinc-300 hover:text-[var(--aesthetic-accent,#E89B63)] hover:bg-white/10 disabled:opacity-35 disabled:pointer-events-none transition cursor-pointer"
+          >
+            <BookmarkPlus className="w-5 h-5" />
           </button>
         )}
 

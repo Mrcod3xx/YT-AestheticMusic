@@ -77,3 +77,28 @@ export async function removeQueueItemAtIndex(
   }
   return null;
 }
+
+export async function reorderQueueItem(
+  fromIndex: number,
+  toIndex: number
+): Promise<QueueTrackItem[] | null> {
+  const res = await callMainWorldBridge<{
+    ok?: boolean;
+    queue?: QueueTrackItem[];
+  }>('REORDER_QUEUE_ITEM', { fromIndex, toIndex }, 3000);
+  if (res?.ok && Array.isArray(res.queue)) {
+    return res.queue;
+  }
+  return null;
+}
+
+export async function clearUpcomingQueue(): Promise<QueueTrackItem[] | null> {
+  const res = await callMainWorldBridge<{
+    ok?: boolean;
+    queue?: QueueTrackItem[];
+  }>('CLEAR_UPCOMING_QUEUE', {}, 3000);
+  if (res?.ok && Array.isArray(res.queue)) {
+    return res.queue;
+  }
+  return null;
+}

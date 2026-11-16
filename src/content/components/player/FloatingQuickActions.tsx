@@ -1,17 +1,19 @@
 import React from 'react';
-import { Eye, EyeOff, Search, Disc, Minimize2, Maximize2 } from 'lucide-react';
+import { Eye, EyeOff, Search, Disc, Minimize2, Maximize2, PictureInPicture2 } from 'lucide-react';
 import { BackgroundMode, PlayerPosition } from '../../../shared/types';
 
 interface FloatingQuickActionsProps {
   zenMode: boolean;
   lyricsOpen?: boolean;
   lyricsOnly?: boolean;
+  pipOpen?: boolean;
   searchVisible: boolean;
   backgroundMode: BackgroundMode;
   playerPosition?: PlayerPosition;
   onToggleEye: () => void;
   onToggleSearch: () => void;
   onCycleBackgroundMode: () => void;
+  onTogglePip?: () => void;
   onToggleFullscreen: () => void;
 }
 
@@ -19,12 +21,14 @@ export const FloatingQuickActions: React.FC<FloatingQuickActionsProps> = ({
   zenMode,
   lyricsOpen = false,
   lyricsOnly = false,
+  pipOpen = false,
   searchVisible,
   backgroundMode,
   playerPosition = 'bottom-center',
   onToggleEye,
   onToggleSearch,
   onCycleBackgroundMode,
+  onTogglePip,
   onToggleFullscreen,
 }) => {
   const isFullscreen = Boolean(document.fullscreenElement);
@@ -91,6 +95,20 @@ export const FloatingQuickActions: React.FC<FloatingQuickActionsProps> = ({
         >
           <Disc className="w-5 h-5" />
         </button>
+
+        {onTogglePip && (
+          <button
+            type="button"
+            onClick={onTogglePip}
+            title={pipOpen ? 'Close Mini Desk Player (P)' : 'Pop Out Mini Desk Player (P)'}
+            aria-pressed={pipOpen}
+            className={`${pillClass} ${
+              pipOpen ? 'text-[var(--aesthetic-accent,#E89B63)] bg-white/15 border-white/30' : ''
+            }`}
+          >
+            <PictureInPicture2 className="w-5 h-5" />
+          </button>
+        )}
 
         <button
           type="button"

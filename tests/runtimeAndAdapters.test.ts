@@ -91,9 +91,13 @@ describe('runtimeSafety & adapter helpers', () => {
         panelTransparency: -20,
         animationSpeed: 10,
         theme: 'velvet-noir',
-        stageStyle: 'vinyl',
-        ambientParticles: 'bokeh',
+        stageStyle: 'cassette',
+        clockStyle: 'flip',
+        softAudioFade: false,
+        ambientParticles: 'petals',
+        ambientAurora: true,
         showMiniLyricLine: true,
+        romanizeLyrics: false,
         backgroundMode: 'custom',
         fontFamily: 'mono',
         accentColor: '#c28356',
@@ -107,9 +111,13 @@ describe('runtimeSafety & adapter helpers', () => {
     expect(sanitized.panelTransparency).toBe(25);
     expect(sanitized.animationSpeed).toBe(2.0);
     expect(sanitized.theme).toBe('velvet-noir');
-    expect(sanitized.stageStyle).toBe('vinyl');
-    expect(sanitized.ambientParticles).toBe('bokeh');
+    expect(sanitized.stageStyle).toBe('cassette');
+    expect(sanitized.clockStyle).toBe('flip');
+    expect(sanitized.softAudioFade).toBe(false);
+    expect(sanitized.ambientParticles).toBe('petals');
+    expect(sanitized.ambientAurora).toBe(true);
     expect(sanitized.showMiniLyricLine).toBe(true);
+    expect(sanitized.romanizeLyrics).toBe(false);
     expect(sanitized.backgroundMode).toBe('auto');
     expect(sanitized.fontFamily).toBe('mono');
     expect(sanitized.accentColor).toBe('#C28356');
@@ -121,17 +129,39 @@ describe('runtimeSafety & adapter helpers', () => {
       settings: {
         enabled: true,
         stageStyle: 'hologram',
+        clockStyle: 'sundial',
         ambientParticles: 'fireworks',
         theme: 'unknown-theme',
       },
     });
     expect(rejectedEnums.enabled).toBe(true);
     expect(rejectedEnums.stageStyle).toBeUndefined();
+    expect(rejectedEnums.clockStyle).toBeUndefined();
     expect(rejectedEnums.ambientParticles).toBeUndefined();
     expect(rejectedEnums.theme).toBeUndefined();
 
     expect(() => parseAndSanitizeImportedSettings({ format: 'wrong-app', settings: {} })).toThrow();
     expect(() => parseAndSanitizeImportedSettings({})).toThrow();
     expect(() => parseAndSanitizeImportedSettings([])).toThrow();
+
+    const withScenes = parseAndSanitizeImportedSettings({
+      format: SETTINGS_EXPORT_FORMAT,
+      settings: {
+        customScenes: [
+          {
+            id: 'scene-one',
+            name: 'Chill Desk',
+            snapshot: {
+              theme: 'cozy-room',
+              accentColor: '#DDA15E',
+              blurIntensity: 48,
+            },
+          },
+        ],
+      },
+    });
+    expect(withScenes.customScenes).toHaveLength(1);
+    expect(withScenes.customScenes?.[0].name).toBe('Chill Desk');
+    expect(withScenes.customScenes?.[0].snapshot.theme).toBe('cozy-room');
   });
 });

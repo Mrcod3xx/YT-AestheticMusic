@@ -10,27 +10,32 @@ import {
 } from '../shared/types';
 import { DEFAULT_SETTINGS } from '../shared/defaultSettings';
 import { getSettings, subscribeToSettings } from '../shared/storage';
+import { clearListeningHistory } from '../shared/listeningHistory';
 import {
   hasValidExtensionRuntime,
   shouldShieldKeyboardTarget,
 } from '../shared/runtimeSafety';
+import { disposeAmbientAudio } from './adapters/ambientAudioAdapter';
 import {
+  applyPlaybackSpeedAndPitch,
   readLiveTrackMetadata,
   triggerLike,
   triggerMuteToggle,
-  triggerNext,
-  triggerPlayPause,
-  triggerPrevious,
+  triggerPlayPauseWithFade,
   triggerRepeat,
   triggerSeek,
   triggerShuffle,
+  triggerShuffleUpcomingQueue,
+  triggerSkipWithFade,
   triggerVolume,
 } from './adapters/playerAdapter';
 import {
+  clearUpcomingQueue,
   fetchLiveQueue,
   playNextQueueItemAtIndex,
   readDomQueueFallback,
   removeQueueItemAtIndex,
+  reorderQueueItem,
   selectQueueItemAtIndex,
 } from './adapters/queueAdapter';
 import {
@@ -40,12 +45,15 @@ import {
 } from './adapters/lyricsAdapter';
 import {
   addBrowseTrackToQueue,
+  createYtmPlaylist,
+  fetchAddToPlaylistOptions,
   fetchBrowseDetails,
   fetchLibraryHub,
   playBrowseCollection,
   playBrowseTrack,
   searchYouTubeMusic,
   startSongRadio,
+  toggleTrackInPlaylist,
 } from './adapters/searchAdapter';
 import { syncNativeVideoModePreference } from './adapters/videoAdapter';
 import shadowStyles from './styles/shadow.css?inline';
@@ -138,28 +146,31 @@ function bindSearchItemCallbacks(items: SearchResultItem[]): SearchResultItem[] 
 
 const appActions: AestheticAppActions = {
   onTogglePlay: () => {
-    triggerPlayPause();
+    void triggerPlayPauseWithFade(currentSettings.softAudioFade ?? true);
     setTimeout(scheduleRender, 80);
-    scheduleQueueRefresh(400);
+    setTimeout(scheduleRender, 240);
+    scheduleQueueRefresh(450);
   },
   onPrevious: () => {
-    triggerPrevious();
-    setTimeout(scheduleRender, 120);
-    scheduleQueueRefresh(400);
+    void triggerSkipWithFade('prev', currentSettings.softAudioFade ?? true);
+    setTimeout(scheduleRender, 160);
+    scheduleQueueRefresh(450);
   },
   onNext: () => {
-    triggerNext();
-    setTimeout(scheduleRender, 120);
-    scheduleQueueRefresh(400);
+    void triggerSkipWithFade('next', currentSettings.softAudioFade ?? true);
+    setTimeout(scheduleRender, 160);
+    scheduleQueueRefresh(450);
   },
   onToggleRepeat: () => {
     triggerRepeat();
     setTimeout(scheduleRender, 80);
   },
   onToggleShuffle: () => {
-    triggerShuffle();
-    setTimeout(scheduleRender, 120);
-    scheduleQueueRefresh(350);
+    void triggerShuffle().then((res) => {
+      scheduleRender();
+      scheduleQueueRefresh(res.manualShuffled ? 80 : 250);
+    });
+    setTimeout(scheduleRender, 160);
   },
   onToggleLike: () => {
     triggerLike();
@@ -200,6 +211,31 @@ const appActions: AestheticAppActions = {
       scheduleQueueRefresh(80);
     }
   },
+  onReorderQueueIndex: async (fromIndex: number, toIndex: number) => {
+    const nextQueue = await reorderQueueItem(fromIndex, toIndex);
+    if (nextQueue) {
+      cachedQueue = nextQueue;
+      scheduleRender();
+    } else {
+      scheduleQueueRefresh(80);
+    }
+  },
+  onClearUpcomingQueue: async () => {
+    const nextQueue = await clearUpcomingQueue();
+    if (nextQueue) {
+      cachedQueue = nextQueue;
+      scheduleRender();
+    } else {
+      scheduleQueueRefresh(80);
+    }
+  },
+  onShuffleUpcomingQueue: async () => {
+    const res = await triggerShuffleUpcomingQueue();
+    if (res.shuffled) {
+      scheduleQueueRefresh(60);
+    }
+    return res.shuffled;
+  },
   onRefreshQueue: () => {
     scheduleQueueRefresh(50);
   },
@@ -231,6 +267,12 @@ const appActions: AestheticAppActions = {
       items: bindSearchItemCallbacks(response.items),
     };
   },
+  onFetchAddToPlaylistOptions: (videoId) => fetchAddToPlaylistOptions(videoId),
+  onToggleTrackInPlaylist: (playlistId, videoId, add) =>
+    toggleTrackInPlaylist(playlistId, videoId, add),
+  onCreatePlaylist: (title, privacyStatus, videoIdOrIds) =>
+    createYtmPlaylist(title, privacyStatus, videoIdOrIds),
+  onClearListeningHistory: () => clearListeningHistory(),
   onStartSongRadio: async (videoId: string) => {
     const ok = await startSongRadio(videoId);
     if (ok) {
@@ -239,7 +281,8 @@ const appActions: AestheticAppActions = {
     }
     return ok;
   },
-  onFetchBrowseDetails: (browseId, kind) => fetchBrowseDetails(browseId, kind),
+  onFetchBrowseDetails: (browseId, kind, params) =>
+    fetchBrowseDetails(browseId, kind, params),
   onPlayBrowseCollection: async (params) => {
     await playBrowseCollection(params);
     setTimeout(scheduleRender, 250);
@@ -451,6 +494,8 @@ function deactivateAestheticMode() {
 
   detachVideoListeners();
   clearLyricsRetryTimer();
+  disposeAmbientAudio();
+  applyPlaybackSpeedAndPitch(1.0, true);
   document.documentElement.removeAttribute('data-aesthetic-mode');
   document.documentElement.removeAttribute('data-aesthetic-bg');
   removeHostOverrideStyles();

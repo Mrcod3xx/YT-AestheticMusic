@@ -15,6 +15,10 @@ import {
   Check,
   Heart,
   Sparkles,
+  Compass,
+  History,
+  BookmarkPlus,
+  Trash2,
   ExternalLink,
 } from 'lucide-react';
 import {
@@ -33,6 +37,7 @@ export interface SearchResultItem {
   category: SearchResultCategory;
   artworkUrl: string;
   browseId?: string;
+  params?: string;
   videoId?: string;
   playlistId?: string;
   isTopResult?: boolean;
@@ -55,7 +60,8 @@ interface SearchBarOverlayProps {
   onOpenDetails?: (target: BrowseTarget) => void;
   onFetchBrowseDetails?: (
     browseId: string,
-    kind?: 'Artist' | 'Album' | 'Playlist'
+    kind?: 'Artist' | 'Album' | 'Playlist',
+    params?: string
   ) => Promise<BrowseDetailsData | null>;
   onPlayBrowseCollection?: (params: {
     endpoint?: Record<string, unknown>;
@@ -68,6 +74,13 @@ interface SearchBarOverlayProps {
     track: BrowseTrackItem,
     playNext: boolean
   ) => Promise<boolean>;
+  onSaveToPlaylist?: (track: {
+    title: string;
+    artist: string;
+    artworkUrl?: string;
+    videoId: string;
+  }) => void;
+  onClearListeningHistory?: () => Promise<void> | void;
 }
 
 const LIBRARY_HUB_CHIPS: Array<{
@@ -77,7 +90,18 @@ const LIBRARY_HUB_CHIPS: Array<{
   { id: 'liked', label: 'Liked Songs' },
   { id: 'playlists', label: 'Playlists' },
   { id: 'home', label: 'Quick Picks' },
+  { id: 'explore', label: 'Moods & Explore' },
+  { id: 'history', label: 'Recent' },
 ];
+
+function renderHubChipIcon(id: LibraryHubSection, accentClass = '') {
+  const cls = `w-3.5 h-3.5 ${accentClass}`.trim();
+  if (id === 'liked') return <Heart className={cls} />;
+  if (id === 'playlists') return <ListMusic className={cls} />;
+  if (id === 'home') return <Sparkles className={cls} />;
+  if (id === 'explore') return <Compass className={cls} />;
+  return <History className={cls} />;
+}
 
 const FILTER_TABS: Array<{ id: SearchFilterTab; label: string }> = [
   { id: 'All', label: 'All' },
@@ -101,6 +125,8 @@ export const SearchBarOverlay: React.FC<SearchBarOverlayProps> = ({
   onPlayBrowseCollection,
   onPlayBrowseTrack,
   onQueueBrowseTrack,
+  onSaveToPlaylist,
+  onClearListeningHistory,
 }) => {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResultItem[]>([]);
@@ -381,6 +407,7 @@ export const SearchBarOverlay: React.FC<SearchBarOverlayProps> = ({
     if (isBrowsableKind && item.browseId && onOpenDetails) {
       onOpenDetails({
         browseId: item.browseId,
+        params: item.params,
         kind: item.category as 'Artist' | 'Album' | 'Playlist',
         previewTitle: item.title,
         previewSubtitle: item.subtitle,
@@ -441,11 +468,32 @@ export const SearchBarOverlay: React.FC<SearchBarOverlayProps> = ({
   const renderQueueButtonsForAction = (
     feedbackId: string,
     onQueueAction: (playNext: boolean) => Promise<boolean> | boolean | void,
-    compact = false
+    compact = false,
+    playlistTarget?: {
+      title: string;
+      artist: string;
+      artworkUrl?: string;
+      videoId: string;
+    }
   ) => {
     const feedback = queuedFeedback[feedbackId];
     return (
       <div className="flex items-center gap-1.5 shrink-0">
+        {playlistTarget && onSaveToPlaylist && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onSaveToPlaylist(playlistTarget);
+            }}
+            title="Save to playlist"
+            className={`${
+              compact ? 'w-8 h-8 justify-center' : 'px-2.5 py-1.5'
+            } rounded-full border text-[11.5px] font-medium flex items-center gap-1 transition cursor-pointer bg-black/65 hover:bg-white/20 border-white/15 text-zinc-200 hover:text-[var(--aesthetic-accent,#E89B63)]`}
+          >
+            <BookmarkPlus className="w-3.5 h-3.5" />
+          </button>
+        )}
         <button
           type="button"
           onClick={(e) =>
@@ -502,7 +550,20 @@ export const SearchBarOverlay: React.FC<SearchBarOverlayProps> = ({
 
   const renderQueueButtons = (item: SearchResultItem, compact = false) => {
     if (!item.canQueue || !item.onAddToQueue) return null;
-    return renderQueueButtonsForAction(item.id, item.onAddToQueue, compact);
+    const playlistTarget = item.videoId
+      ? {
+          title: item.title,
+          artist: item.subtitle,
+          artworkUrl: item.artworkUrl,
+          videoId: item.videoId,
+        }
+      : undefined;
+    return renderQueueButtonsForAction(
+      item.id,
+      item.onAddToQueue,
+      compact,
+      playlistTarget
+    );
   };
 
   const selectedPlaylistItem =
@@ -548,7 +609,7 @@ export const SearchBarOverlay: React.FC<SearchBarOverlayProps> = ({
         >
           {/* Header & Filter Bar */}
           <div className="flex items-center justify-between gap-3 pb-3 mb-3 border-b border-white/10">
-            <div className="flex items-center gap-2.5 overflow-x-auto no-scrollbar">
+            <div className="flex items-center gap-2.5 min-w-0 flex-1 overflow-x-auto overflow-y-hidden no-scrollbar">
               {activeLibrarySection ? (
                 <div className="flex items-center gap-1.5 bg-white/[0.04] rounded-full p-1 border border-white/10 shrink-0">
                   {LIBRARY_HUB_CHIPS.map((chip) => {
@@ -558,15 +619,13 @@ export const SearchBarOverlay: React.FC<SearchBarOverlayProps> = ({
                         key={chip.id}
                         type="button"
                         onClick={() => void handleLoadLibrarySection(chip.id)}
-                        className={`px-3.5 py-1.5 rounded-full text-[12.5px] font-medium transition cursor-pointer flex items-center gap-1.5 ${
+                        className={`px-3.5 py-1.5 rounded-full text-[12.5px] font-medium whitespace-nowrap shrink-0 transition cursor-pointer flex items-center gap-1.5 ${
                           active
                             ? 'bg-[var(--aesthetic-accent-strong,#C28356)] text-black font-semibold'
                             : 'text-zinc-300 hover:text-white'
                         }`}
                       >
-                        {chip.id === 'liked' && <Heart className="w-3.5 h-3.5" />}
-                        {chip.id === 'playlists' && <ListMusic className="w-3.5 h-3.5" />}
-                        {chip.id === 'home' && <Sparkles className="w-3.5 h-3.5" />}
+                        {renderHubChipIcon(chip.id)}
                         <span>{chip.label}</span>
                       </button>
                     );
@@ -582,7 +641,7 @@ export const SearchBarOverlay: React.FC<SearchBarOverlayProps> = ({
                         })
                       }
                       title="Open Liked Music in full modal"
-                      className="px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-[12px] font-medium text-white flex items-center gap-1 transition cursor-pointer"
+                      className="px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-[12px] font-medium text-white whitespace-nowrap shrink-0 flex items-center gap-1 transition cursor-pointer"
                     >
                       <span>Open All</span>
                       <ExternalLink className="w-3 h-3" />
@@ -596,7 +655,7 @@ export const SearchBarOverlay: React.FC<SearchBarOverlayProps> = ({
                       key={tab.id}
                       type="button"
                       onClick={() => setActiveFilter(tab.id)}
-                      className={`px-3.5 py-1.5 rounded-full text-[12.5px] font-medium transition cursor-pointer ${
+                      className={`px-3.5 py-1.5 rounded-full text-[12.5px] font-medium whitespace-nowrap shrink-0 transition cursor-pointer ${
                         activeFilter === tab.id
                           ? 'bg-[var(--aesthetic-accent-strong,#C28356)] text-black font-semibold'
                           : 'text-zinc-400 hover:text-zinc-200'
@@ -607,19 +666,21 @@ export const SearchBarOverlay: React.FC<SearchBarOverlayProps> = ({
                   ))}
                 </div>
               )}
-              {isSearching && (
-                <Loader2 className="w-3.5 h-3.5 animate-spin text-[var(--aesthetic-accent-strong,#C28356)] shrink-0" />
-              )}
             </div>
 
-            <button
-              type="button"
-              onClick={() => setShowDropdown(false)}
-              title="Close search results (Esc)"
-              className="w-10 h-10 rounded-full flex items-center justify-center text-zinc-400 hover:text-white hover:bg-white/10 transition cursor-pointer shrink-0"
-            >
-              <X className="w-5 h-5" />
-            </button>
+            <div className="flex items-center gap-2 shrink-0">
+              {isSearching && (
+                <Loader2 className="w-4 h-4 animate-spin text-[var(--aesthetic-accent-strong,#C28356)] shrink-0" />
+              )}
+              <button
+                type="button"
+                onClick={() => setShowDropdown(false)}
+                title="Close search results (Esc)"
+                className="w-10 h-10 rounded-full flex items-center justify-center text-zinc-400 hover:text-white hover:bg-white/10 transition cursor-pointer shrink-0"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
           </div>
 
           <div className="flex-1 overflow-y-auto pr-1 custom-queue-scroll space-y-5">
@@ -658,45 +719,73 @@ export const SearchBarOverlay: React.FC<SearchBarOverlayProps> = ({
                   </button>
                 )}
               </div>
-            ) : activeLibrarySection === 'liked' ? (
+            ) : activeLibrarySection === 'liked' || activeLibrarySection === 'history' ? (
               <div className="space-y-2.5">
                 <div className="flex items-center justify-between gap-3 px-1">
                   <div className="text-[13px] text-zinc-300 font-medium flex items-center gap-2">
-                    <Heart className="w-4 h-4 text-[var(--aesthetic-accent,#E89B63)]" />
-                    <span>Liked Songs ({results.length})</span>
+                    {activeLibrarySection === 'history' ? (
+                      <>
+                        <History className="w-4 h-4 text-[var(--aesthetic-accent,#E89B63)]" />
+                        <span>Recently Played ({results.length})</span>
+                      </>
+                    ) : (
+                      <>
+                        <Heart className="w-4 h-4 text-[var(--aesthetic-accent,#E89B63)]" />
+                        <span>Liked Songs ({results.length})</span>
+                      </>
+                    )}
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (onPlayBrowseCollection) {
-                        const first = results[0];
-                        onPlayBrowseCollection({
-                          playlistId: 'LM',
-                          tracks: first?.videoId
-                            ? [
-                                {
-                                  id: first.id,
-                                  index: 0,
-                                  title: first.title,
-                                  subtitle: first.subtitle,
-                                  duration: '',
-                                  artworkUrl: first.artworkUrl,
-                                  videoId: first.videoId,
-                                  playlistId: first.playlistId || 'LM',
-                                },
-                              ]
-                            : undefined,
-                        });
-                        setShowDropdown(false);
-                      } else if (results[0]) {
-                        handleSelectItem(results[0]);
-                      }
-                    }}
-                    className="px-3.5 py-1.5 rounded-full bg-white text-black hover:bg-zinc-200 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
-                  >
-                    <Play className="w-3.5 h-3.5 fill-black" />
-                    <span>Play All</span>
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {activeLibrarySection === 'history' &&
+                      onClearListeningHistory &&
+                      results.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            await onClearListeningHistory();
+                            setResults([]);
+                          }}
+                          className="px-3 py-1.5 rounded-full bg-white/[0.07] hover:bg-red-500/20 border border-white/10 text-xs font-medium text-zinc-300 hover:text-red-300 flex items-center gap-1.5 transition cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Clear</span>
+                        </button>
+                      )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (activeLibrarySection === 'liked' && onPlayBrowseCollection) {
+                          const first = results[0];
+                          onPlayBrowseCollection({
+                            playlistId: 'LM',
+                            tracks: first?.videoId
+                              ? [
+                                  {
+                                    id: first.id,
+                                    index: 0,
+                                    title: first.title,
+                                    subtitle: first.subtitle,
+                                    duration: '',
+                                    artworkUrl: first.artworkUrl,
+                                    videoId: first.videoId,
+                                    playlistId: first.playlistId || 'LM',
+                                  },
+                                ]
+                              : undefined,
+                          });
+                          setShowDropdown(false);
+                        } else if (results[0]) {
+                          handleSelectItem(results[0]);
+                        }
+                      }}
+                      className="px-3.5 py-1.5 rounded-full bg-white text-black hover:bg-zinc-200 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
+                    >
+                      <Play className="w-3.5 h-3.5 fill-black" />
+                      <span>
+                        {activeLibrarySection === 'history' ? 'Play Latest' : 'Play All'}
+                      </span>
+                    </button>
+                  </div>
                 </div>
                 <div className="space-y-1">
                   {results.map((item, idx) => (
@@ -747,6 +836,89 @@ export const SearchBarOverlay: React.FC<SearchBarOverlayProps> = ({
                     </div>
                   ))}
                 </div>
+              </div>
+            ) : activeLibrarySection === 'explore' ? (
+              <div className="space-y-5">
+                {(() => {
+                  const moodPills = results.filter(
+                    (it) =>
+                      it.browseId === 'FEmusic_moods_and_genres_category' ||
+                      !it.artworkUrl
+                  );
+                  const exploreCards = results.filter(
+                    (it) =>
+                      it.browseId !== 'FEmusic_moods_and_genres_category' &&
+                      Boolean(it.artworkUrl)
+                  );
+                  return (
+                    <>
+                      {moodPills.length > 0 && (
+                        <section className="space-y-2.5">
+                          <div className="flex items-center gap-2 text-[13px] font-medium text-zinc-300 px-1">
+                            <Compass className="w-4 h-4 text-[var(--aesthetic-accent,#E89B63)]" />
+                            <span>Moods & Genres</span>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {moodPills.map((pill) => (
+                              <button
+                                key={pill.id}
+                                type="button"
+                                onClick={() => handleSelectItem(pill)}
+                                className="px-3.5 py-2 rounded-xl bg-white/[0.06] hover:bg-white/[0.15] border border-white/12 text-[12.5px] font-medium text-zinc-100 hover:text-white transition cursor-pointer"
+                              >
+                                {pill.title}
+                              </button>
+                            ))}
+                          </div>
+                        </section>
+                      )}
+                      {exploreCards.length > 0 && (
+                        <section className="space-y-2.5">
+                          <h3 className="text-[14px] font-semibold text-white/95 tracking-tight px-1">
+                            Explore Releases & Videos
+                          </h3>
+                          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3">
+                            {exploreCards.slice(0, 20).map((item) => (
+                              <div
+                                key={item.id}
+                                role="button"
+                                tabIndex={0}
+                                onClick={() => handleSelectItem(item)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    handleSelectItem(item);
+                                  }
+                                }}
+                                className="group flex flex-col text-left cursor-pointer"
+                              >
+                                <div className="relative w-full aspect-square rounded-xl overflow-hidden bg-zinc-800/90 border border-white/12 shadow-md">
+                                  <img
+                                    src={item.artworkUrl}
+                                    alt={item.title}
+                                    className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                                    draggable={false}
+                                  />
+                                  <div className="absolute inset-0 bg-black/35 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
+                                    <div className="w-9 h-9 rounded-full bg-black/70 border border-white/25 flex items-center justify-center">
+                                      <Play className="w-4 h-4 text-white fill-white ml-0.5" />
+                                    </div>
+                                  </div>
+                                </div>
+                                <div className="mt-1.5 text-[12px] font-semibold text-white truncate">
+                                  {item.title}
+                                </div>
+                                <div className="text-[11px] text-zinc-400 truncate">
+                                  {item.subtitle}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </section>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
             ) : activeLibrarySection === 'playlists' ? (
               <div className="grid grid-cols-1 md:grid-cols-[248px_1fr] gap-4 items-stretch min-h-[270px]">
@@ -1012,7 +1184,15 @@ export const SearchBarOverlay: React.FC<SearchBarOverlayProps> = ({
                                   renderQueueButtonsForAction(
                                     track.id,
                                     (playNext) => onQueueBrowseTrack(track, playNext),
-                                    true
+                                    true,
+                                    track.videoId
+                                      ? {
+                                          title: track.title,
+                                          artist: track.artist || track.subtitle,
+                                          artworkUrl: track.artworkUrl,
+                                          videoId: track.videoId,
+                                        }
+                                      : undefined
                                   )}
                                 {track.duration && (
                                   <span className="text-[11px] text-zinc-400 tabular-nums w-10 text-right">
@@ -1321,15 +1501,7 @@ export const SearchBarOverlay: React.FC<SearchBarOverlayProps> = ({
               onClick={() => void handleLoadLibrarySection(chip.id)}
               className="px-3.5 py-1.5 rounded-full bg-black/55 hover:bg-white/15 backdrop-blur-xl border border-white/15 text-[12px] font-medium text-zinc-200 hover:text-white shadow-lg transition cursor-pointer flex items-center gap-1.5"
             >
-              {chip.id === 'liked' && (
-                <Heart className="w-3.5 h-3.5 text-[var(--aesthetic-accent,#E89B63)]" />
-              )}
-              {chip.id === 'playlists' && (
-                <ListMusic className="w-3.5 h-3.5 text-[var(--aesthetic-accent,#E89B63)]" />
-              )}
-              {chip.id === 'home' && (
-                <Sparkles className="w-3.5 h-3.5 text-[var(--aesthetic-accent,#E89B63)]" />
-              )}
+              {renderHubChipIcon(chip.id, 'text-[var(--aesthetic-accent,#E89B63)]')}
               <span>{chip.label}</span>
             </button>
           ))}

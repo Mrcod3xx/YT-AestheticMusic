@@ -20,6 +20,7 @@ import {
   extractLibraryHubItems,
   extractSearchRenderers,
   extractTracksFromBrowseShelf,
+  parseAddToPlaylistOptions,
   parseBrowseDetails,
   pickBestThumbnail,
   upgradeGoogleImage,
@@ -34,12 +35,19 @@ interface BridgeRequestDetail {
     | 'PLAY_QUEUE_INDEX'
     | 'PLAY_NEXT_QUEUE_ITEM'
     | 'REMOVE_QUEUE_ITEM'
+    | 'REORDER_QUEUE_ITEM'
+    | 'CLEAR_UPCOMING_QUEUE'
+    | 'TOGGLE_SHUFFLE'
+    | 'SHUFFLE_UPCOMING_QUEUE'
     | 'SEARCH_YTM'
     | 'PLAY_SEARCH_RESULT'
     | 'ADD_TO_QUEUE'
     | 'GET_LYRICS'
     | 'FETCH_BROWSE_DETAILS'
     | 'FETCH_LIBRARY_HUB'
+    | 'GET_ADD_TO_PLAYLIST_OPTIONS'
+    | 'TOGGLE_TRACK_IN_PLAYLIST'
+    | 'CREATE_PLAYLIST'
     | 'PLAY_ENDPOINT';
   requestId: string;
   payload?: Record<string, unknown>;
@@ -601,11 +609,13 @@ const LIBRARY_HUB_BROWSE_IDS: Record<LibraryHubSection, string> = {
   liked: 'FEmusic_liked_videos',
   playlists: 'FEmusic_liked_playlists',
   home: 'FEmusic_home',
+  explore: 'FEmusic_moods_and_genres',
+  history: 'FEmusic_history',
 };
 
-async function postInnerTubeBrowse(
-  browseId: string,
-  params?: string
+async function postInnerTubeEndpoint(
+  endpointPath: string,
+  payload: Record<string, unknown>
 ): Promise<
   | { ok: true; json: unknown; session: YtmSessionState }
   | { ok: false; error: string; status?: number; session: YtmSessionState }
@@ -617,7 +627,7 @@ async function postInnerTubeBrowse(
   }
 
   const headers = await getInnerTubeAuthHeaders(cfg, session);
-  const url = `https://music.youtube.com/youtubei/v1/browse?prettyPrint=false&key=${encodeURIComponent(
+  const url = `https://music.youtube.com/youtubei/v1/${endpointPath}?prettyPrint=false&key=${encodeURIComponent(
     cfg.apiKey
   )}`;
   const res = await fetch(url, {
@@ -626,20 +636,32 @@ async function postInnerTubeBrowse(
     headers,
     body: JSON.stringify({
       context: cfg.context,
-      browseId,
-      ...(params ? { params } : {}),
+      ...payload,
     }),
   });
   if (!res.ok) {
     return {
       ok: false,
       status: res.status,
-      error: `InnerTube browse HTTP ${res.status}`,
+      error: `InnerTube ${endpointPath} HTTP ${res.status}`,
       session,
     };
   }
 
   return { ok: true, json: await res.json(), session };
+}
+
+async function postInnerTubeBrowse(
+  browseId: string,
+  params?: string
+): Promise<
+  | { ok: true; json: unknown; session: YtmSessionState }
+  | { ok: false; error: string; status?: number; session: YtmSessionState }
+> {
+  return postInnerTubeEndpoint('browse', {
+    browseId,
+    ...(params ? { params } : {}),
+  });
 }
 
 function finalizePlaylistResults(
@@ -711,6 +733,28 @@ async function fetchLibraryHub(section: LibraryHubSection) {
     }
 
     let items = extractLibraryHubItems(browseRes.json, section, 60);
+
+    // Enrich Moods & Explore with FEmusic_explore albums, videos & mixes alongside Mood pills
+    if (section === 'explore') {
+      try {
+        const exploreRes = await postInnerTubeBrowse('FEmusic_explore');
+        if (exploreRes.ok) {
+          const exploreItems = extractLibraryHubItems(exploreRes.json, 'explore', 36);
+          const seenExplore = new Set(
+            items.map((it) => `${it.browseId || ''}:${it.params || ''}:${it.videoId || it.title}`)
+          );
+          for (const ex of exploreItems) {
+            const key = `${ex.browseId || ''}:${ex.params || ''}:${ex.videoId || ex.title}`;
+            if (!seenExplore.has(key)) {
+              seenExplore.add(key);
+              items.push(ex);
+            }
+          }
+        }
+      } catch {
+        // Keep mood tiles cleanly if explore endpoint fails
+      }
+    }
 
     // Fallback for Liked Songs if wrapped in a full playlist details structure
     if (section === 'liked' && items.length === 0) {
@@ -791,7 +835,8 @@ async function fetchLibraryHub(section: LibraryHubSection) {
 
 async function fetchBrowseDetails(
   rawBrowseId: string,
-  hintKind?: 'Artist' | 'Album' | 'Playlist'
+  hintKind?: 'Artist' | 'Album' | 'Playlist',
+  params?: string
 ) {
   const browseId = normalizeBrowseIdForRequest(rawBrowseId, hintKind);
   if (!browseId) {
@@ -799,7 +844,7 @@ async function fetchBrowseDetails(
   }
 
   try {
-    const browseRes = await postInnerTubeBrowse(browseId);
+    const browseRes = await postInnerTubeBrowse(browseId, params);
     if (!browseRes.ok) {
       return browseRes;
     }
@@ -1719,6 +1764,262 @@ function removeQueueItemAt(idx: number) {
   return { ok: false, queue: extractQueueItems() };
 }
 
+function reorderQueueItem(fromIdx: number, toIdx: number) {
+  const ctx = getQueueContext();
+  if (
+    !ctx.store?.dispatch ||
+    !Number.isInteger(fromIdx) ||
+    !Number.isInteger(toIdx) ||
+    fromIdx < 0 ||
+    toIdx < 0 ||
+    fromIdx === toIdx
+  ) {
+    return { ok: false, queue: extractQueueItems() };
+  }
+
+  const currIdx =
+    ctx.selectedIndex >= 0 && ctx.selectedIndex < ctx.items.length ? ctx.selectedIndex : 0;
+
+  if (fromIdx === currIdx || toIdx <= currIdx) {
+    return { ok: false, queue: extractQueueItems() };
+  }
+
+  if (fromIdx < ctx.items.length && toIdx < ctx.items.length) {
+    ctx.store.dispatch({
+      type: 'MOVE_ITEM',
+      payload: { fromIndex: fromIdx, toIndex: toIdx },
+    });
+    return { ok: true, queue: extractQueueItems() };
+  }
+
+  // Promote an automix item into manual queue items when moved up past boundary
+  const automixIdx = fromIdx - ctx.items.length;
+  if (automixIdx >= 0 && automixIdx < ctx.automixItems.length) {
+    const rawAutomix = ctx.automixItems[automixIdx];
+    ctx.store.dispatch({ type: 'REMOVE_AUTOMIX_ITEM', payload: automixIdx });
+    const fresh = getQueueContext();
+    const insertIndex = Math.max(
+      currIdx + 1,
+      Math.min(toIdx, fresh.items.length)
+    );
+    fresh.store?.dispatch?.({
+      type: 'ADD_ITEMS',
+      payload: {
+        nextQueueItemId: fresh.qState?.nextQueueItemId || 1,
+        index: insertIndex,
+        items: [rawAutomix],
+        shouldAssignIds: true,
+      },
+    });
+    return { ok: true, queue: extractQueueItems() };
+  }
+
+  return { ok: false, queue: extractQueueItems() };
+}
+
+function clearUpcomingQueueItems() {
+  const ctx = getQueueContext();
+  if (!ctx.store?.dispatch) {
+    return { ok: false, queue: extractQueueItems() };
+  }
+
+  const currIdx =
+    ctx.selectedIndex >= 0 && ctx.selectedIndex < ctx.items.length ? ctx.selectedIndex : 0;
+
+  for (let i = ctx.items.length - 1; i > currIdx; i--) {
+    ctx.store.dispatch({ type: 'REMOVE_ITEM', payload: i });
+  }
+  for (let j = ctx.automixItems.length - 1; j >= 0; j--) {
+    ctx.store.dispatch({ type: 'REMOVE_AUTOMIX_ITEM', payload: j });
+  }
+
+  return { ok: true, queue: extractQueueItems() };
+}
+
+async function fetchAddToPlaylistOptions(videoId: string) {
+  if (!videoId) {
+    return { ok: false, loggedIn: true, options: [], error: 'Missing videoId' };
+  }
+  const res = await postInnerTubeEndpoint('playlist/get_add_to_playlist', {
+    videoIds: [videoId],
+  });
+  if (!res.ok) {
+    return {
+      ok: false,
+      loggedIn: res.session.loggedIn || res.session.hasAuthCookies,
+      options: [],
+      error: res.error,
+    };
+  }
+  return {
+    ok: true,
+    loggedIn: res.session.loggedIn || res.session.hasAuthCookies,
+    options: parseAddToPlaylistOptions(res.json),
+  };
+}
+
+async function toggleTrackInPlaylist(
+  playlistId: string,
+  videoId: string,
+  add: boolean
+) {
+  if (!playlistId || !videoId) {
+    return { ok: false, error: 'Missing playlistId or videoId' };
+  }
+  const actionObj = add
+    ? { action: 'ACTION_ADD_VIDEO', addedVideoId: videoId }
+    : { action: 'ACTION_REMOVE_VIDEO_BY_VIDEO_ID', removedVideoId: videoId };
+  const res = await postInnerTubeEndpoint('browse/edit_playlist', {
+    playlistId,
+    actions: [actionObj],
+  });
+  if (!res.ok) {
+    return { ok: false, error: res.error };
+  }
+  const body = res.json as { status?: string } | null;
+  const succeeded = !body?.status || body.status === 'STATUS_SUCCEEDED';
+  return { ok: succeeded, added: add };
+}
+
+function getQueueItemVideoId(entry: RawQueueEntry | null | undefined): string {
+  const r = unwrapQueueRenderer(entry) as {
+    videoId?: string;
+    navigationEndpoint?: { watchEndpoint?: { videoId?: string } };
+  };
+  return String(r?.videoId || r?.navigationEndpoint?.watchEndpoint?.videoId || '').trim();
+}
+
+function shuffleUpcomingQueueItems() {
+  const ctx = getQueueContext();
+  const dispatch = ctx.store?.dispatch;
+  if (!dispatch || ctx.items.length < 2) {
+    return { shuffled: false, moved: 0, itemCount: ctx.items.length };
+  }
+
+  const startIdx = ctx.selectedIndex >= 0 ? ctx.selectedIndex + 1 : 0;
+  const n = ctx.items.length;
+  if (n - startIdx < 2) {
+    return { shuffled: false, moved: 0, itemCount: n };
+  }
+
+  let moved = 0;
+  for (let target = startIdx; target < n - 1; target++) {
+    const pick = target + Math.floor(Math.random() * (n - target));
+    if (pick > target) {
+      dispatch({
+        type: 'MOVE_ITEM',
+        payload: { fromIndex: pick, toIndex: target },
+      });
+      moved++;
+    }
+  }
+
+  if (moved === 0) {
+    dispatch({
+      type: 'MOVE_ITEM',
+      payload: { fromIndex: n - 1, toIndex: startIdx },
+    });
+    moved = 1;
+  }
+
+  return { shuffled: true, moved, itemCount: n };
+}
+
+async function toggleShuffleInMainWorld() {
+  const playerBar = document.querySelector('ytmusic-player-bar') as
+    | (HTMLElement & {
+        onShuffleButtonClick_?: () => void;
+        onShuffleButtonClick?: () => void;
+      })
+    | null;
+
+  const beforeCtx = getQueueContext();
+  const beforeStart = beforeCtx.selectedIndex >= 0 ? beforeCtx.selectedIndex + 1 : 0;
+  const beforeUpcoming = beforeCtx.items.slice(beforeStart).map(getQueueItemVideoId);
+  const wasShuffleOn = Boolean(playerBar?.hasAttribute('shuffle-on'));
+
+  const candidates = Array.from(
+    document.querySelectorAll(
+      'ytmusic-player-bar .shuffle button#button, ytmusic-player-bar #expand-shuffle button#button, ytmusic-player-bar .shuffle, ytmusic-player-bar #expand-shuffle'
+    )
+  ) as HTMLElement[];
+  const visibleBtn = candidates.find((el) => el.offsetParent !== null) || candidates[0] || null;
+
+  if (visibleBtn) {
+    visibleBtn.click();
+  } else if (typeof playerBar?.onShuffleButtonClick_ === 'function') {
+    playerBar.onShuffleButtonClick_();
+  } else if (typeof playerBar?.onShuffleButtonClick === 'function') {
+    playerBar.onShuffleButtonClick();
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, 140));
+
+  let isShuffleOn = Boolean(playerBar?.hasAttribute('shuffle-on'));
+  if (isShuffleOn === wasShuffleOn) {
+    if (typeof playerBar?.onShuffleButtonClick_ === 'function') {
+      playerBar.onShuffleButtonClick_();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      isShuffleOn = Boolean(playerBar?.hasAttribute('shuffle-on'));
+    } else if (typeof playerBar?.onShuffleButtonClick === 'function') {
+      playerBar.onShuffleButtonClick();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      isShuffleOn = Boolean(playerBar?.hasAttribute('shuffle-on'));
+    }
+  }
+
+  const afterCtx = getQueueContext();
+  const afterStart = afterCtx.selectedIndex >= 0 ? afterCtx.selectedIndex + 1 : 0;
+  const afterUpcoming = afterCtx.items.slice(afterStart).map(getQueueItemVideoId);
+  const orderUnchanged =
+    beforeUpcoming.length >= 2 &&
+    afterUpcoming.length === beforeUpcoming.length &&
+    beforeUpcoming.every((id, idx) => id === afterUpcoming[idx]);
+
+  let manualShuffleResult: { shuffled: boolean; moved: number; itemCount: number } | null = null;
+  if ((isShuffleOn || isShuffleOn === wasShuffleOn) && orderUnchanged) {
+    manualShuffleResult = shuffleUpcomingQueueItems();
+  }
+
+  return {
+    shuffleOn: isShuffleOn,
+    manualShuffled: Boolean(manualShuffleResult?.shuffled),
+    moved: manualShuffleResult?.moved ?? 0,
+  };
+}
+
+async function createPlaylistWithTrack(
+  title: string,
+  privacyStatus: 'PRIVATE' | 'UNLISTED' | 'PUBLIC',
+  videoIdOrIds?: string | string[]
+) {
+  const cleanTitle = title.trim().slice(0, 120);
+  if (!cleanTitle) {
+    return { ok: false, error: 'Playlist title is required.' };
+  }
+  const uniqueVideoIds = Array.from(
+    new Set(
+      (Array.isArray(videoIdOrIds) ? videoIdOrIds : videoIdOrIds ? [videoIdOrIds] : [])
+        .map((id) => String(id || '').trim())
+        .filter(Boolean)
+    )
+  ).slice(0, 200);
+
+  const res = await postInnerTubeEndpoint('playlist/create', {
+    title: cleanTitle,
+    privacyStatus,
+    ...(uniqueVideoIds.length > 0 ? { videoIds: uniqueVideoIds } : {}),
+  });
+  if (!res.ok) {
+    return { ok: false, error: res.error };
+  }
+  const body = res.json as { playlistId?: string } | null;
+  return {
+    ok: Boolean(body?.playlistId),
+    playlistId: body?.playlistId,
+  };
+}
+
 (function initAestheticMainWorldBridge() {
   if ((window as unknown as Record<string, boolean>).__AESTHETIC_MUSIC_BRIDGE_V5__) {
     return;
@@ -1801,6 +2102,65 @@ function removeQueueItemAt(idx: number) {
             break;
           }
 
+          case 'REORDER_QUEUE_ITEM': {
+            const fromIndex = Number(detail.payload?.fromIndex ?? -1);
+            const toIndex = Number(detail.payload?.toIndex ?? -1);
+            responseData = reorderQueueItem(fromIndex, toIndex);
+            break;
+          }
+
+          case 'CLEAR_UPCOMING_QUEUE': {
+            responseData = clearUpcomingQueueItems();
+            break;
+          }
+
+          case 'GET_ADD_TO_PLAYLIST_OPTIONS': {
+            const videoId = String(detail.payload?.videoId || '').trim();
+            responseData = await fetchAddToPlaylistOptions(videoId);
+            break;
+          }
+
+          case 'TOGGLE_TRACK_IN_PLAYLIST': {
+            const playlistId = String(detail.payload?.playlistId || '').trim();
+            const videoId = String(detail.payload?.videoId || '').trim();
+            const add = Boolean(detail.payload?.add);
+            responseData = await toggleTrackInPlaylist(playlistId, videoId, add);
+            break;
+          }
+
+          case 'TOGGLE_SHUFFLE': {
+            responseData = await toggleShuffleInMainWorld();
+            break;
+          }
+
+          case 'SHUFFLE_UPCOMING_QUEUE': {
+            responseData = shuffleUpcomingQueueItems();
+            break;
+          }
+
+          case 'CREATE_PLAYLIST': {
+            const title = String(detail.payload?.title || '').trim();
+            const rawPrivacy = String(detail.payload?.privacyStatus || 'PRIVATE').toUpperCase();
+            const privacyStatus =
+              rawPrivacy === 'PUBLIC'
+                ? 'PUBLIC'
+                : rawPrivacy === 'UNLISTED'
+                ? 'UNLISTED'
+                : 'PRIVATE';
+            const rawVideoIds = Array.isArray(detail.payload?.videoIds)
+              ? detail.payload.videoIds.map((id) => String(id || '').trim()).filter(Boolean)
+              : undefined;
+            const singleVideoId = detail.payload?.videoId
+              ? String(detail.payload.videoId).trim()
+              : undefined;
+            responseData = await createPlaylistWithTrack(
+              title,
+              privacyStatus,
+              rawVideoIds && rawVideoIds.length > 0 ? rawVideoIds : singleVideoId
+            );
+            break;
+          }
+
           case 'SEARCH_YTM': {
             const query = String(detail.payload?.query || '').trim();
             const results = query ? await performNativeSearch(query) : [];
@@ -1822,7 +2182,10 @@ function removeQueueItemAt(idx: number) {
               rawKind === 'Artist' || rawKind === 'Album' || rawKind === 'Playlist'
                 ? rawKind
                 : undefined;
-            responseData = await fetchBrowseDetails(browseId, hintKind);
+            const params = detail.payload?.params
+              ? String(detail.payload.params)
+              : undefined;
+            responseData = await fetchBrowseDetails(browseId, hintKind, params);
             break;
           }
 
@@ -1831,7 +2194,9 @@ function removeQueueItemAt(idx: number) {
             const section: LibraryHubSection =
               rawSection === 'liked' ||
               rawSection === 'playlists' ||
-              rawSection === 'home'
+              rawSection === 'home' ||
+              rawSection === 'explore' ||
+              rawSection === 'history'
                 ? rawSection
                 : 'home';
             responseData = await fetchLibraryHub(section);

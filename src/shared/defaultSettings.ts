@@ -13,6 +13,7 @@ export const DEFAULT_SETTINGS: AestheticSettings = {
   clockFontSize: 100,
   clock24Hour: false,
   clockColor: '#C28356',
+  clockStyle: 'digital',
   showCarousel: true,
   stageStyle: 'carousel',
   showSidebar: true,
@@ -21,6 +22,7 @@ export const DEFAULT_SETTINGS: AestheticSettings = {
   panelTransparency: 72,
   borderRadius: 22,
   fontFamily: 'modern',
+  customScenes: [],
 
   // Background
   backgroundMode: 'auto',
@@ -32,6 +34,7 @@ export const DEFAULT_SETTINGS: AestheticSettings = {
   vignette: true,
   filmGrain: true,
   ambientParticles: 'none',
+  ambientAurora: false,
   customBackgroundType: 'none',
   customBackgroundName: '',
   customWallpaperVersion: 0,
@@ -42,6 +45,7 @@ export const DEFAULT_SETTINGS: AestheticSettings = {
   showVolumeControl: true,
   thumbnailSize: 'medium',
   playerGlassOpacity: 76,
+  softAudioFade: true,
 
   // Lyrics
   lyricsEnabled: true,
@@ -51,6 +55,7 @@ export const DEFAULT_SETTINGS: AestheticSettings = {
   lyricsHighlightActive: true,
   lyricsDimBackground: true,
   showMiniLyricLine: false,
+  romanizeLyrics: true,
 
   // Performance
   reducedMotion: false,

@@ -1,5 +1,6 @@
 import { AestheticSettings, ThemePreset } from './types';
 import { DEFAULT_SETTINGS, THEME_PRESETS } from './defaultSettings';
+import { sanitizeCustomScenes } from './scenePresets';
 import {
   hasValidExtensionRuntime,
   isExtensionContextInvalidatedError,
@@ -120,9 +121,12 @@ const BOOLEAN_SETTING_KEYS: Array<keyof AestheticSettings> = [
   'lyricsHighlightActive',
   'lyricsDimBackground',
   'showMiniLyricLine',
+  'romanizeLyrics',
+  'ambientAurora',
   'reducedMotion',
   'pauseWhenHidden',
   'lowGpuMode',
+  'softAudioFade',
 ];
 
 const NUMERIC_SETTING_BOUNDS: Record<string, { min: number; max: number; round?: boolean }> = {
@@ -147,14 +151,15 @@ const ENUM_SETTING_ALLOWLIST: Record<string, readonly string[]> = {
     'sakura-haze',
     'custom',
   ],
-  stageStyle: ['carousel', 'vinyl', 'minimal'],
+  stageStyle: ['carousel', 'vinyl', 'cassette', 'poster', 'minimal'],
   playerPosition: ['bottom-center', 'bottom-wide', 'compact-dock'],
   fontFamily: ['modern', 'editorial', 'mono'],
   backgroundMode: ['auto', 'video', 'ambient', 'off'],
-  ambientParticles: ['none', 'dust', 'bokeh'],
+  ambientParticles: ['none', 'dust', 'bokeh', 'rain', 'petals', 'embers'],
   thumbnailSize: ['small', 'medium', 'large'],
   defaultLyricsMode: ['focus', 'compact', 'full'],
   lyricsFontSize: ['small', 'medium', 'large'],
+  clockStyle: ['digital', 'flip'],
 };
 
 /** Builds a portable JSON backup payload without machine-local IndexedDB wallpaper binaries. */
@@ -229,6 +234,11 @@ export function parseAndSanitizeImportedSettings(raw: unknown): Partial<Aestheti
       sanitized[colorKey] = val.trim().toUpperCase();
       acceptedCount++;
     }
+  }
+
+  if (Array.isArray(source.customScenes)) {
+    sanitized.customScenes = sanitizeCustomScenes(source.customScenes);
+    acceptedCount++;
   }
 
   if (acceptedCount === 0) {

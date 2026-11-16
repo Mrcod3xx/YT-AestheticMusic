@@ -115,7 +115,9 @@ export function readLiveTrackMetadata(): TrackMetadata | null {
     videoToggleLocked,
     shuffleOn: playerBar?.hasAttribute('shuffle-on') || false,
     repeatMode: repeatAttr,
-    volume: videoEl ? Math.round(videoEl.volume * 100) : 100,
+    volume: videoEl
+      ? Math.round((fadeRestoreVolume !== null ? fadeRestoreVolume : videoEl.volume) * 100)
+      : 100,
     isMuted: videoEl ? videoEl.muted : false,
   };
 }
@@ -164,11 +166,49 @@ export function triggerRepeat(): void {
   btn?.click();
 }
 
-export function triggerShuffle(): void {
-  const btn = document.querySelector(
-    'ytmusic-player-bar .shuffle'
-  ) as HTMLElement | null;
+export async function triggerShuffle(): Promise<{
+  shuffleOn: boolean;
+  manualShuffled: boolean;
+  moved: number;
+}> {
+  const res = await callMainWorldBridge<{
+    shuffleOn?: boolean;
+    manualShuffled?: boolean;
+    moved?: number;
+  }>('TOGGLE_SHUFFLE', {}, 2500);
+
+  if (res) {
+    return {
+      shuffleOn: Boolean(res.shuffleOn),
+      manualShuffled: Boolean(res.manualShuffled),
+      moved: res.moved ?? 0,
+    };
+  }
+
+  const btn = (document.querySelector('ytmusic-player-bar .shuffle button#button') ||
+    document.querySelector('ytmusic-player-bar #expand-shuffle button#button') ||
+    document.querySelector('ytmusic-player-bar .shuffle')) as HTMLElement | null;
   btn?.click();
+  const playerBar = document.querySelector('ytmusic-player-bar');
+  return {
+    shuffleOn: playerBar?.hasAttribute('shuffle-on') || false,
+    manualShuffled: false,
+    moved: 0,
+  };
+}
+
+export async function triggerShuffleUpcomingQueue(): Promise<{
+  shuffled: boolean;
+  moved: number;
+}> {
+  const res = await callMainWorldBridge<{
+    shuffled?: boolean;
+    moved?: number;
+  }>('SHUFFLE_UPCOMING_QUEUE', {}, 2500);
+  return {
+    shuffled: Boolean(res?.shuffled),
+    moved: res?.moved ?? 0,
+  };
 }
 
 export function triggerLike(): void {
@@ -187,7 +227,146 @@ export function triggerSeek(seconds: number): void {
   callMainWorldBridge('SEEK_TO', { seconds });
 }
 
+let activeFadeToken = 0;
+let activeFadeRaf = 0;
+let fadeRestoreVolume: number | null = null;
+
+function cancelPendingAudioFade(restoreOriginal = false): void {
+  activeFadeToken += 1;
+  if (activeFadeRaf) {
+    cancelAnimationFrame(activeFadeRaf);
+    activeFadeRaf = 0;
+  }
+  if (restoreOriginal && fadeRestoreVolume !== null) {
+    const video = document.querySelector('video') as HTMLVideoElement | null;
+    if (video) {
+      video.volume = Math.max(0, Math.min(1, fadeRestoreVolume));
+    }
+    fadeRestoreVolume = null;
+  }
+}
+
+function tweenVideoVolume(
+  video: HTMLVideoElement,
+  from: number,
+  to: number,
+  durationMs: number,
+  token: number
+): Promise<boolean> {
+  return new Promise((resolve) => {
+    const clampedFrom = Math.max(0, Math.min(1, from));
+    const clampedTo = Math.max(0, Math.min(1, to));
+    if (durationMs <= 0 || Math.abs(clampedTo - clampedFrom) < 0.005) {
+      if (token === activeFadeToken) {
+        video.volume = clampedTo;
+        resolve(true);
+      } else {
+        resolve(false);
+      }
+      return;
+    }
+
+    const startTime = performance.now();
+    const step = (now: number) => {
+      if (token !== activeFadeToken) {
+        resolve(false);
+        return;
+      }
+      const progress = Math.min(1, (now - startTime) / durationMs);
+      const eased = 0.5 - 0.5 * Math.cos(Math.PI * progress);
+      video.volume = Math.max(0, Math.min(1, clampedFrom + (clampedTo - clampedFrom) * eased));
+      if (progress >= 1) {
+        activeFadeRaf = 0;
+        resolve(true);
+        return;
+      }
+      activeFadeRaf = requestAnimationFrame(step);
+    };
+    activeFadeRaf = requestAnimationFrame(step);
+  });
+}
+
+export async function triggerPlayPauseWithFade(softFadeEnabled: boolean): Promise<void> {
+  const video = document.querySelector('video') as HTMLVideoElement | null;
+  if (!softFadeEnabled || !video || video.muted) {
+    cancelPendingAudioFade(true);
+    triggerPlayPause();
+    return;
+  }
+
+  const targetVol = fadeRestoreVolume ?? video.volume;
+  if (targetVol <= 0.02 && video.paused) {
+    cancelPendingAudioFade(true);
+    triggerPlayPause();
+    return;
+  }
+
+  activeFadeToken += 1;
+  if (activeFadeRaf) {
+    cancelAnimationFrame(activeFadeRaf);
+    activeFadeRaf = 0;
+  }
+  const token = activeFadeToken;
+
+  if (!video.paused) {
+    fadeRestoreVolume = targetVol;
+    const completed = await tweenVideoVolume(video, video.volume, 0.01, 160, token);
+    if (!completed || token !== activeFadeToken) return;
+    triggerPlayPause();
+    setTimeout(() => {
+      if (token !== activeFadeToken) return;
+      video.volume = Math.max(0, Math.min(1, targetVol));
+      fadeRestoreVolume = null;
+    }, 30);
+    return;
+  }
+
+  const resumeVol = targetVol > 0.02 ? targetVol : 0.75;
+  fadeRestoreVolume = resumeVol;
+  video.volume = 0.01;
+  triggerPlayPause();
+  const completed = await tweenVideoVolume(video, 0.01, resumeVol, 220, token);
+  if (completed && token === activeFadeToken) {
+    fadeRestoreVolume = null;
+  }
+}
+
+export async function triggerSkipWithFade(
+  direction: 'next' | 'prev',
+  softFadeEnabled: boolean
+): Promise<void> {
+  const triggerFn = direction === 'next' ? triggerNext : triggerPrevious;
+  const video = document.querySelector('video') as HTMLVideoElement | null;
+  if (!softFadeEnabled || !video || video.muted || video.paused || video.volume <= 0.02) {
+    cancelPendingAudioFade(true);
+    triggerFn();
+    return;
+  }
+
+  const targetVol = fadeRestoreVolume ?? video.volume;
+  activeFadeToken += 1;
+  if (activeFadeRaf) {
+    cancelAnimationFrame(activeFadeRaf);
+    activeFadeRaf = 0;
+  }
+  const token = activeFadeToken;
+  fadeRestoreVolume = targetVol;
+
+  const dipped = await tweenVideoVolume(video, video.volume, 0.04, 130, token);
+  if (!dipped || token !== activeFadeToken) return;
+  triggerFn();
+
+  await new Promise((resolve) => setTimeout(resolve, 70));
+  if (token !== activeFadeToken) return;
+
+  const risen = await tweenVideoVolume(video, Math.min(video.volume, 0.06), targetVol, 220, token);
+  if (risen && token === activeFadeToken) {
+    fadeRestoreVolume = null;
+  }
+}
+
 export function triggerVolume(volumePercent: number): void {
+  cancelPendingAudioFade(false);
   const clamped = Math.min(100, Math.max(0, volumePercent));
   const video = document.querySelector('video.html5-main-video') as HTMLVideoElement | null;
   if (video) {
@@ -215,5 +394,36 @@ export function triggerMuteToggle(): void {
     if (video) {
       video.muted = !video.muted;
     }
+  }
+}
+
+/**
+ * Safely applies playback speed and analog pitch shifting directly onto the active
+ * <video> element without touching MediaSource/WebAudio routing.
+ */
+export function applyPlaybackSpeedAndPitch(
+  playbackRate: number,
+  preservePitch: boolean
+): void {
+  const video = getConnectedVideoEl();
+  if (!video) return;
+
+  const safeRate = Number.isFinite(playbackRate)
+    ? Math.max(0.75, Math.min(1.5, Math.round(playbackRate * 20) / 20))
+    : 1.0;
+
+  if (Math.abs(video.playbackRate - safeRate) > 0.005) {
+    video.playbackRate = safeRate;
+  }
+
+  const pitchEl = video as HTMLVideoElement & {
+    preservesPitch?: boolean;
+    webkitPreservesPitch?: boolean;
+  };
+  if (typeof pitchEl.preservesPitch === 'boolean') {
+    pitchEl.preservesPitch = preservePitch;
+  }
+  if (typeof pitchEl.webkitPreservesPitch === 'boolean') {
+    pitchEl.webkitPreservesPitch = preservePitch;
   }
 }

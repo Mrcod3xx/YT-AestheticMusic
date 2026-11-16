@@ -59,6 +59,12 @@ describe('keyboardShortcuts router & Escape layering', () => {
       resolveAestheticShortcut(makeEvent({ key: 'm' }), BASE_STATE)
     ).toBe('toggle-mute');
     expect(
+      resolveAestheticShortcut(makeEvent({ key: 'p' }), BASE_STATE)
+    ).toBe('toggle-pip');
+    expect(
+      resolveAestheticShortcut(makeEvent({ key: 'b' }), BASE_STATE)
+    ).toBe('save-to-playlist');
+    expect(
       resolveAestheticShortcut(makeEvent({ key: '?' }), BASE_STATE)
     ).toBe('toggle-shortcuts-help');
     expect(
@@ -137,6 +143,18 @@ describe('keyboardShortcuts router & Escape layering', () => {
   it('resolves Escape strictly from topmost modal/popover layer down to Zen/Lyrics-Only', () => {
     expect(
       resolveEscapeTarget({
+        playlistModalOpen: true,
+        settingsPopoverOpen: true,
+        shortcutsHelpOpen: true,
+        detailsModalOpen: true,
+        searchDropdownOpen: true,
+        zenMode: true,
+        lyricsOnly: true,
+      })
+    ).toBe('playlist-modal');
+
+    expect(
+      resolveEscapeTarget({
         settingsPopoverOpen: true,
         shortcutsHelpOpen: true,
         detailsModalOpen: true,
@@ -190,7 +208,9 @@ describe('keyboardShortcuts router & Escape layering', () => {
   });
 
   it('exposes populated shortcut cheat-sheet metadata entries', () => {
-    expect(SHORTCUT_HELP_ITEMS.length).toBeGreaterThanOrEqual(9);
+    expect(SHORTCUT_HELP_ITEMS.length).toBeGreaterThanOrEqual(10);
+    expect(SHORTCUT_HELP_ITEMS.some((item) => item.keys.includes('P'))).toBe(true);
+    expect(SHORTCUT_HELP_ITEMS.some((item) => item.keys.includes('B'))).toBe(true);
     expect(SHORTCUT_HELP_ITEMS.every((item) => item.keys.length > 0 && item.description.length > 0)).toBe(true);
   });
 });

@@ -1,11 +1,17 @@
 import React, { useRef, useState } from 'react';
 import {
+  ArrowDown,
+  ArrowUp,
+  BookmarkPlus,
   ChevronDown,
   ChevronRight,
+  ListPlus,
   ListStart,
   Radio,
   RefreshCw,
   Search,
+  Shuffle,
+  Trash2,
   X,
 } from 'lucide-react';
 import { QueueTrackItem, TrackMetadata } from '../../../shared/types';
@@ -16,7 +22,23 @@ interface ContinuePlayingSidebarProps {
   queue: QueueTrackItem[];
   onSelectTrack: (index: number) => void;
   onPlayNextTrack?: (index: number) => void;
+  onMoveTrack?: (fromIndex: number, toIndex: number) => void;
   onRemoveTrack?: (index: number) => void;
+  onClearUpcoming?: () => void;
+  onShuffleUpcoming?: () => void;
+  onSaveQueueAsPlaylist?: (target: {
+    title: string;
+    artist: string;
+    artworkUrl?: string;
+    videoId: string;
+    batchVideoIds: string[];
+  }) => void;
+  onSaveToPlaylist?: (track: {
+    title: string;
+    artist: string;
+    artworkUrl?: string;
+    videoId: string;
+  }) => void;
   onStartRadio?: (track: { videoId?: string; title: string }) => void;
   onRefreshQueue: () => void;
 }
@@ -27,7 +49,12 @@ export const ContinuePlayingSidebar: React.FC<ContinuePlayingSidebarProps> = ({
   queue,
   onSelectTrack,
   onPlayNextTrack,
+  onMoveTrack,
   onRemoveTrack,
+  onClearUpcoming,
+  onShuffleUpcoming,
+  onSaveQueueAsPlaylist,
+  onSaveToPlaylist,
   onStartRadio,
   onRefreshQueue,
 }) => {
@@ -109,8 +136,15 @@ export const ContinuePlayingSidebar: React.FC<ContinuePlayingSidebarProps> = ({
     item: QueueTrackItem,
     {
       canPlayNext,
+      canMoveUp = false,
+      canMoveDown = false,
       muted = false,
-    }: { canPlayNext: boolean; muted?: boolean }
+    }: {
+      canPlayNext: boolean;
+      canMoveUp?: boolean;
+      canMoveDown?: boolean;
+      muted?: boolean;
+    }
   ) => (
     <div
       key={`${item.index}-${item.videoId || item.title}`}
@@ -147,8 +181,59 @@ export const ContinuePlayingSidebar: React.FC<ContinuePlayingSidebarProps> = ({
           )}
         </div>
       </div>
-      {(onPlayNextTrack || onRemoveTrack || (onStartRadio && item.videoId)) && (
+      {(onPlayNextTrack ||
+        onMoveTrack ||
+        onRemoveTrack ||
+        (onSaveToPlaylist && item.videoId) ||
+        (onStartRadio && item.videoId)) && (
         <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+          {onMoveTrack && canMoveUp && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onMoveTrack(item.index, item.index - 1);
+              }}
+              title="Move track up"
+              aria-label={`Move ${item.title} up`}
+              className="w-7 h-8 rounded-xl flex items-center justify-center bg-white/[0.08] hover:bg-white/[0.18] border border-white/10 text-zinc-300 hover:text-white transition cursor-pointer"
+            >
+              <ArrowUp className="w-3.5 h-3.5" />
+            </button>
+          )}
+          {onMoveTrack && canMoveDown && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onMoveTrack(item.index, item.index + 1);
+              }}
+              title="Move track down"
+              aria-label={`Move ${item.title} down`}
+              className="w-7 h-8 rounded-xl flex items-center justify-center bg-white/[0.08] hover:bg-white/[0.18] border border-white/10 text-zinc-300 hover:text-white transition cursor-pointer"
+            >
+              <ArrowDown className="w-3.5 h-3.5" />
+            </button>
+          )}
+          {onSaveToPlaylist && item.videoId && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onSaveToPlaylist({
+                  title: item.title,
+                  artist: item.artist,
+                  artworkUrl: item.artworkUrl,
+                  videoId: item.videoId!,
+                });
+              }}
+              title="Save to Playlist"
+              aria-label={`Save ${item.title} to playlist`}
+              className="w-8 h-8 rounded-xl flex items-center justify-center bg-white/[0.08] hover:bg-white/[0.18] border border-white/10 text-zinc-300 hover:text-white transition cursor-pointer"
+            >
+              <BookmarkPlus className="w-3.5 h-3.5 text-[var(--aesthetic-accent,#E89B63)]" />
+            </button>
+          )}
           {onStartRadio && item.videoId && (
             <button
               type="button"
@@ -272,8 +357,67 @@ export const ContinuePlayingSidebar: React.FC<ContinuePlayingSidebarProps> = ({
             >
               <RefreshCw className="w-4 h-4" />
             </button>
+
+            {onClearUpcoming && upcomingItems.length > 0 && (
+              <button
+                type="button"
+                onClick={onClearUpcoming}
+                title="Clear all upcoming tracks"
+                aria-label="Clear upcoming queue"
+                className="w-9 h-9 rounded-full flex items-center justify-center bg-white/[0.08] hover:bg-red-500/20 border border-white/15 hover:border-red-400/40 text-zinc-300 hover:text-red-300 transition cursor-pointer shrink-0"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            )}
           </div>
         </div>
+
+        {((onShuffleUpcoming && upcomingItems.length >= 2) ||
+          (onSaveQueueAsPlaylist && queue.some((item) => Boolean(item.videoId)))) && (
+          <div className="flex items-center gap-1.5 px-2 mb-2.5">
+            {onShuffleUpcoming && upcomingItems.length >= 2 && (
+              <button
+                type="button"
+                onClick={onShuffleUpcoming}
+                title="Mix up the upcoming songs in this queue"
+                className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-white/[0.07] hover:bg-white/[0.15] border border-white/12 text-[11.5px] font-medium text-zinc-200 hover:text-white transition cursor-pointer"
+              >
+                <Shuffle className="w-3.5 h-3.5 text-[var(--aesthetic-accent,#E89B63)] shrink-0" />
+                <span className="truncate">Shuffle Queue</span>
+              </button>
+            )}
+            {onSaveQueueAsPlaylist &&
+              (() => {
+                const queueVideoIds = Array.from(
+                  new Set(
+                    queue
+                      .map((item) => String(item.videoId || '').trim())
+                      .filter(Boolean)
+                  )
+                );
+                if (queueVideoIds.length === 0) return null;
+                return (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onSaveQueueAsPlaylist({
+                        title: `Saved Queue (${queueVideoIds.length} songs)`,
+                        artist: `${queueVideoIds.length} songs from your current queue`,
+                        artworkUrl: activeItem.highResArtworkUrl || activeItem.artworkUrl,
+                        videoId: queueVideoIds[0],
+                        batchVideoIds: queueVideoIds,
+                      })
+                    }
+                    title="Save this whole queue as a new YouTube Music playlist"
+                    className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-white/[0.07] hover:bg-white/[0.15] border border-white/12 text-[11.5px] font-medium text-zinc-200 hover:text-white transition cursor-pointer"
+                  >
+                    <ListPlus className="w-3.5 h-3.5 text-[var(--aesthetic-accent,#E89B63)] shrink-0" />
+                    <span className="truncate">Save Playlist ({queueVideoIds.length})</span>
+                  </button>
+                );
+              })()}
+          </div>
+        )}
 
         {/* Inline Queue Search Filter */}
         {filterOpen && (
@@ -395,12 +539,18 @@ export const ContinuePlayingSidebar: React.FC<ContinuePlayingSidebarProps> = ({
             }}
           >
             {filteredUpcoming.length > 0 ? (
-              filteredUpcoming.map((item) =>
-                renderQueueRow(item, {
-                  canPlayNext:
-                    upcomingItems.findIndex((u) => u.index === item.index) > 0,
-                })
-              )
+              filteredUpcoming.map((item) => {
+                const upPos = upcomingItems.findIndex((u) => u.index === item.index);
+                return renderQueueRow(item, {
+                  canPlayNext: upPos > 0,
+                  canMoveUp: upPos > 0 && !item.isAutomix,
+                  canMoveDown:
+                    upPos >= 0 &&
+                    upPos < upcomingItems.length - 1 &&
+                    !upcomingItems[upPos + 1]?.isAutomix &&
+                    !item.isAutomix,
+                });
+              })
             ) : (
               <div className="px-3 py-4 text-[12.5px] text-zinc-400">
                 {normalizedFilter
